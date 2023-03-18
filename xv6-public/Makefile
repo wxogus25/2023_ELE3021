@@ -1,3 +1,4 @@
+# kernel program
 OBJS = \
 	bio.o\
 	console.o\
@@ -27,6 +28,7 @@ OBJS = \
 	uart.o\
 	vectors.o\
 	vm.o\
+	prac_syscall.o\
 
 # Cross-compiling (e.g., on Mac OS X)
 # TOOLPREFIX = i386-jos-elf
@@ -165,6 +167,7 @@ mkfs: mkfs.c fs.h
 # http://www.gnu.org/software/make/manual/html_node/Chained-Rules.html
 .PRECIOUS: %.o
 
+# user program
 UPROGS=\
 	_cat\
 	_echo\
@@ -180,6 +183,7 @@ UPROGS=\
 	_stressfs\
 	_wc\
 	_zombie\
+	_prac_myuserapp\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
@@ -249,7 +253,7 @@ qemu-nox-gdb: fs.img xv6.img .gdbinit
 EXTRA=\
 	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
 	ln.c ls.c mkdir.c rm.c stressfs.c wc.c zombie.c\
-	printf.c umalloc.c\
+	printf.c umalloc.c _prac_myuserapp\
 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
 	.gdbinit.tmpl gdbutil\
 
