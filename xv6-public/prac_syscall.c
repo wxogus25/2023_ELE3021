@@ -1,8 +1,8 @@
 #include "types.h"
 #include "defs.h"
 
-// system call function
-int myfunction(char* str){
+// kernel function
+int myfunctionx(char* str){
     cprintf("%s\n", str);
     return 0xABCDABCD;
 }
@@ -14,5 +14,5 @@ int sys_myfunction(void){
     // get str from process stack, return length
     if(argstr(0, &str) < 0)
         return -1;
-    return myfunction(str);
+    return myfunctionx(str);
 }

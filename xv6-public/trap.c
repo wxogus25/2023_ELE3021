@@ -23,6 +23,9 @@ tvinit(void)
     SETGATE(idt[i], 0, SEG_KCODE<<3, vectors[i], 0);
   SETGATE(idt[T_SYSCALL], 1, SEG_KCODE<<3, vectors[T_SYSCALL], DPL_USER);
 
+  // user mode로 수행 가능한 128번 interrupt 추가
+  SETGATE(idt[128], 1, SEG_KCODE<<3, vectors[128], DPL_USER);
+
   initlock(&tickslock, "time");
 }
 
@@ -42,6 +45,19 @@ trap(struct trapframe *tf)
     myproc()->tf = tf;
     syscall();
     if(myproc()->killed)
+      exit();
+    return;
+  }
+
+  // 128번 interrupt handling
+  if(tf->trapno == 128){
+    if (myproc()->killed)
+      exit();
+    myproc()->tf = tf;
+    // 커널 코드 직접 실행하게 함
+    mycall();
+    myproc()->tf->eax = 0;
+    if (myproc()->killed)
       exit();
     return;
   }
