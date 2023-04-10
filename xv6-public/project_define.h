@@ -1,0 +1,2 @@
+#define PSWORD 2018009116
+#define QUESIZE 128

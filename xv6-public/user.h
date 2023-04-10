@@ -23,12 +23,19 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+// practice 1
 int myfunction(char*);
+// project 1
+void yield(void);
+int getLevel(void);
+void setPriority(int pid, int priority);
+void schedulerLock(int password);
+void schedulerUnlock(int password);
 
 // ulib.c
 int stat(const char*, struct stat*);
 char* strcpy(char*, const char*);
-void *memmove(void*, const void*, int);
+void* memmove(void*, const void*, int);
 char* strchr(const char*, char c);
 int strcmp(const char*, const char*);
 void printf(int, const char*, ...);

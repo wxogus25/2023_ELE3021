@@ -2,7 +2,7 @@
 #include "defs.h"
 
 // kernel function
-int myfunctionx(char* str){
+int myfunction(char* str){
     cprintf("%s\n", str);
     return 0xABCDABCD;
 }
@@ -14,5 +14,5 @@ int sys_myfunction(void){
     // get str from process stack, return length
     if(argstr(0, &str) < 0)
         return -1;
-    return myfunctionx(str);
+    return myfunction(str);
 }

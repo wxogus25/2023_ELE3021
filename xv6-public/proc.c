@@ -374,7 +374,7 @@ sched(void)
     panic("sched locks");
   if(p->state == RUNNING)
     panic("sched running");
-  if(readeflags()&FL_IF)
+  if (readeflags() & FL_IF)  // 인터럽트 해제 확인
     panic("sched interruptible");
   intena = mycpu()->intena;
   swtch(&p->context, mycpu()->scheduler);

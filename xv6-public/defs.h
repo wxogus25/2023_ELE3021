@@ -195,7 +195,11 @@ int             myfunction(char*);
 // prac2_usercall.c
 void            mycall(void);
 
+// project1_schedulerLocker.c
+void            schedulerLock(int password);
+void            schedulerUnlock(int password);
+void            printProcessState(void);
 // project1_other.c
-void            yield(void);
+void            myYield(void);
 int             getLevel(void);
 void            setPriority(int pid, int priority);

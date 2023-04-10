@@ -70,7 +70,7 @@ trap(struct trapframe *tf)
       wakeup(&ticks);
       release(&tickslock);
     }
-    lapiceoi();
+    lapiceoi(); // end of interrupt CPU에게 알림(타이머 인터럽트?)
     break;
   case T_IRQ0 + IRQ_IDE:
     ideintr();
