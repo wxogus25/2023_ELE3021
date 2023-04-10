@@ -194,3 +194,8 @@ int             myfunction(char*);
 
 // prac2_usercall.c
 void            mycall(void);
+
+// project1_other.c
+void            yield(void);
+int             getLevel(void);
+void            setPriority(int pid, int priority);
