@@ -16,7 +16,7 @@ void schedulerLock(int password) {
         printProcessState();
         exit();
     }
-
+    // TODO
 }
 
 // 해당 프로세스가 우선적으로 스케줄링 되던 것을 중지
@@ -25,7 +25,7 @@ void schedulerUnlock(int password) {
         printProcessState();
         exit();
     }
-
+    // TODO
 }
 
 // wrapper function
