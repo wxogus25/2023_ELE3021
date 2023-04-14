@@ -2,11 +2,14 @@
 #include "defs.h"
 #include "project_define.h"
 #include "proc.h"
+#include "project1_mlfq.h"
 
+extern struct mlfq *mlfqs;
 // 프로세스 상태 출력
 void printProcessState(void) {
     struct proc *p = myproc();
-    cprintf("pid: %d, time quantum: %d, level: %d\n", p->pid, p->timequantum, p->quelevel);
+    struct proc_w *procwrap = findprocwrap(p);
+    cprintf("pid: %d, time quantum: %d, level: %d\n", p->pid, procwrap->timequantum, procwrap->quelevel);
 }
 
 // 해당 프로세스가 우선적으로 스케줄링 되도록 함

@@ -12,15 +12,33 @@
 extern struct mlfq *mlfqs;
 
 // proc 셋팅
-void procwrapinit(struct procwrapper *procwrap, struct proc *_proc, int level, int priority) {
-    procwrap->timequantum = 0;
+void procwrapinit(struct proc_w *procwrap, struct proc *_proc, int level, int priority) {
     procwrap->procptr = _proc;
     procwrap->priority = priority;
     procwrap->quelevel = level;
+    // 모든 proc은 mlfq에 push 될 때 timequantum을 0으로 초기화하고 들어감
+    procwrap->timequantum = 0;
+}
+
+struct proc_w *findprocwrap(struct proc *_proc) {
+    struct mlfq *q = mlfqs;
+    struct queue *node;
+    // 큐의 head가 0이면(해당 레벨의 큐가 비었으면) 다음 레벨 큐 확인
+    for (; q < &mlfqs[LEVELSIZE] && !q->head; q++){
+        node = &q->head;
+        do {
+            if(node->procwrap.procptr == _proc){
+                return &node->procwrap;
+            }
+        } while (node->next != 0);
+    }
+
+    // 사용되고 있는 노드 중 찾는 proc이 없으면 panic emit
+    panic("proc not found in mlfqs");
 }
 
 // 해당 큐에서 헤드 제거하고 리턴
-struct procwrapper *pop(struct mlfq *q) {
+struct proc_w *pop(struct mlfq *q) {
     struct queue *tpque = q->head;
     if (q->head->next){
         q->head = q->head->next;
@@ -52,7 +70,7 @@ struct proc *popproc() {
 // 특정 레벨 큐에 삽입하는 함수
 // push 하기 전에 procwrap 세팅 필요(procwrap은 여기서 수정되지 않음)
 // 성공하면 0 리턴
-int push(struct procwrapper *procwrap) {
+int push(struct proc_w *procwrap) {
     // priority를 고려한 level 설정
     int level = procwrap->quelevel == 2 ? procwrap->quelevel + procwrap->priority : procwrap->quelevel;
 
@@ -88,6 +106,6 @@ int push(struct procwrapper *procwrap) {
 
 // mlfq 전체에 규칙에 맞게 삽입하기 위한 함수
 // 성공하면 0 리턴
-int pushproc(struct procwrapper *procwrap) {
+int pushproc(struct proc_w *procwrap) {
     return push(procwrap);
 }

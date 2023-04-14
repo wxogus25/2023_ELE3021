@@ -9,6 +9,10 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct proc_w;
+struct queue;
+struct mlfq;
+
 
 // bio.c
 void            binit(void);
@@ -194,6 +198,14 @@ int             myfunction(char*);
 
 // prac2_usercall.c
 void            mycall(void);
+
+// project1_mlfq.c
+void            procwrapinit(struct proc_w* procwrap, struct proc* _proc, int level, int priority);
+struct proc_w*  findprocwrap(struct proc *_proc);
+struct proc_w*  pop(struct mlfq *q);
+struct proc*    popproc();
+int             push(struct proc_w *procwrap);
+int             pushproc(struct proc_w *procwrap);
 
 // project1_schedulerLocker.c
 void            schedulerLock(int password);
