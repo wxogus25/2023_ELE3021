@@ -7,103 +7,18 @@
 #include "proc.h"
 #include "spinlock.h"
 #include "project_define.h"
+#include "project1_mlfq.h"
 
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
 } ptable;
 
-struct queue {
-  struct queue *next;                // 다음 노드(사용중인 노드끼리만 가리킴)
-  struct proc *procptr;              // 가리키고 있는 proc ptr
-  int isused;                        // 사용중인 노드인지 여부
-};
-
-struct mlfq {
-  struct queue procqueue[QUESIZE];   // 큐의 레벨별 크기
-  struct queue *head;                // 큐의 헤드
-  struct queue *tail;                // 큐의 테일
-  int level;                         // 큐의 레벨
-};
-
 static struct proc *initproc;
 
 // LEVELSIZE = LEVEL + PRIORITY
 // PRIORITY 만큼의 큐를 더 만들어서 같은 우선순위끼리 FCFS가 가능하도록 한다.
-static struct mlfq *mlfqs[LEVELSIZE]; // MLFQ
-
-// proc 셋팅
-void procset(struct proc *_proc, int level, int priority){
-  _proc->timequantum = 0;
-  _proc->priority = priority;
-  _proc->quelevel = level;
-}
-
-// 해당 큐에서 헤드 제거하고 리턴
-struct proc *pop(struct mlfq *q){
-  struct queue *tpque = q->head;
-  struct proc *tpproc = tpque->procptr;
-  if(q->head->next)
-    q->head = q->head->next;
-  else
-    q->head = q->tail = 0;
-
-  // 큐의 노드가 있던 위치를 초기화하고 proc 반환
-  tpque->isused = tpque->next = tpque->procptr = 0;
-  return tpproc;
-}
-
-// mlfq에서 스케줄 원칙에 따라 선택된 proc 반환
-// 해당 proc(queue node)는 mlfq에서 제거됨
-struct proc *popproc() {
-  struct mlfq *q = mlfqs;
-  // 큐의 head가 0이면(해당 레벨의 큐가 비었으면) 다음 레벨 큐 확인
-  for (;q < &mlfqs[LEVELSIZE] && !q->head; q++);
-
-  // q가 존재하면 맨 앞에 있는 노드 제거하고 반환
-  if(q->head)
-    return pop(q);
-  
-  // 큐에 proc이 하나도 없으면 panic emit
-  panic("queue is empty, but pop");
-}
-
-// 특정 레벨 큐에 삽입하는 함수
-// push 하기 전에 proc 세팅 필요(proc은 여기서 수정되지 않음)
-int push(struct proc *_proc, int level){
-  // priority를 고려한 level 설정
-  level = level == 2 ? level + _proc->priority : level;
-
-  struct mlfq *q = &mlfqs[level];
-  struct queue *node = &q->procqueue;
-
-  // 큐에서 사용하지 않는 노드 선택
-  for (; node < &((q->procqueue)[QUESIZE]) && node->isused; node++);
-
-  // 사용하지 않는 노드 없으면 panic emit
-  if (node == &((q->procqueue)[QUESIZE]))
-    panic("queue is full, but push");
-
-  // node에 proc 매칭
-  node->next = 0;
-  node->procptr = _proc;
-  node->isused = 1;
-
-  // 큐가 비어있지 않으면 level에 큐 삽입
-  if (q->tail) {
-    q->tail->next = node;
-    q->tail = node;
-  } else {  // 큐가 비어있으면
-    q->tail = q->head = node;
-  }
-
-  return 0;
-}
-
-// mlfq 전체에 규칙에 맞게 삽입하기 위한 함수
-int pushproc(struct proc *_proc) {
-  return push(_proc, _proc->quelevel);
-}
+struct mlfq *mlfqs[LEVELSIZE]; // MLFQ
 
 int nextpid = 1;
 extern void forkret(void);

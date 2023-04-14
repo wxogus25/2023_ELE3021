@@ -49,10 +49,6 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-
-  int priority;                // Process 우선순위, 초기값 3, 값이 작을수록 우선순위 높음
-  int quelevel;                // Process가 위치한 대기 큐 레벨
-  int timequantum;             // Process가 실행된 만큼의 tick
 };
 
 // Process memory is laid out contiguously, low addresses first:
