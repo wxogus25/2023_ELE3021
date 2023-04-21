@@ -16,9 +16,8 @@ struct {
 
 static struct proc *initproc;
 
-// LEVELSIZE = LEVEL + PRIORITY
-// PRIORITY 만큼의 큐를 더 만들어서 같은 우선순위끼리 FCFS가 가능하도록 한다.
-struct mlfq *mlfqs[LEVELSIZE]; // MLFQ
+// schedule mlfq
+struct mlfqs schedmlfq;
 
 int nextpid = 1;
 extern void forkret(void);
@@ -155,6 +154,7 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
+  newproc(p);
 
   release(&ptable.lock);
 }
@@ -221,6 +221,7 @@ fork(void)
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
+  newproc(np);
 
   release(&ptable.lock);
 
@@ -332,34 +333,52 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
+  struct proc_w _proc;
+  struct proc_w *wp;
+
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    // TODO
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
-
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
+    p = schedmlfq.nowproc;
+    // bosting
+    if(schedmlfq.ticks % 100 == 0){
+      boosting();
+      if (p->state == RUNNABLE || p->state == SLEEPING) {
+        procwrapinit(&_proc, p, -1, 3);
+        pushproc(&_proc);
+      }
+    }else{
+      // 실행하고 있던 프로세스 다시 schedmlfq로 이동
+      if(p->state == RUNNABLE || p->state == SLEEPING){
+        procwrapinit(&_proc, p, schedmlfq.quelevel, schedmlfq.priority);
+        pushproc(&_proc);
+      }
     }
-    release(&ptable.lock);
+    // schedmlfq에서 pop
+    wp = popproc();
+    schedmlfq.priority = wp->priority;
+    schedmlfq.quelevel = wp->quelevel;
+    schedmlfq.timequantum = 0;
+    p = wp->procptr;
 
+    // Switch to chosen process.  It is the process's job
+    // to release ptable.lock and then reacquire it
+    // before jumping back to us.
+    c->proc = p;
+    switchuvm(p);
+    p->state = RUNNING;
+
+    swtch(&(c->scheduler), p->context);
+    switchkvm();
+
+    // Process is done running for now.
+    // It should have changed its p->state before coming back.
+    c->proc = 0;
+
+    release(&ptable.lock);
   }
 }
 
@@ -468,6 +487,7 @@ wakeup1(void *chan)
   struct proc *p;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    // 수정 필요 없음
     if(p->state == SLEEPING && p->chan == chan)
       p->state = RUNNABLE;
 }
@@ -494,6 +514,7 @@ kill(int pid)
     if(p->pid == pid){
       p->killed = 1;
       // Wake process from sleep if necessary.
+      // 수정 필요 없음
       if(p->state == SLEEPING)
         p->state = RUNNABLE;
       release(&ptable.lock);

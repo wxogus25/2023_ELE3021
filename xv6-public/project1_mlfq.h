@@ -10,7 +10,7 @@ struct proc_w {
 
 struct queue {
   struct queue *next;                // 다음 노드(사용중인 노드끼리만 가리킴)
-  struct proc_w procwrap;       // 가리키고 있는 proc의 wrap
+  struct proc_w procwrap;            // 가리키고 있는 proc의 wrap
   int isused;                        // 사용중인 노드인지 여부
 };
 
@@ -19,4 +19,16 @@ struct mlfq {
   struct queue *head;                // 큐의 헤드
   struct queue *tail;                // 큐의 테일
   int level;                         // 큐의 레벨
+};
+
+struct mlfqs {
+  // LEVELSIZE = LEVEL + PRIORITY
+  // PRIORITY 만큼의 큐를 더 만들어서 같은 우선순위끼리 FCFS가 가능하도록 한다.
+  struct mlfq mlfql[LEVELSIZE];
+  struct proc *nowproc;
+  int priority;
+  int quelevel;
+  int timequantum;
+  int islock;
+  uint ticks;
 };

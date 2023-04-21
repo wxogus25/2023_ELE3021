@@ -12,6 +12,7 @@ struct superblock;
 struct proc_w;
 struct queue;
 struct mlfq;
+struct mlfqs;
 
 
 // bio.c
@@ -203,9 +204,11 @@ void            mycall(void);
 void            procwrapinit(struct proc_w* procwrap, struct proc* _proc, int level, int priority);
 struct proc_w*  findprocwrap(struct proc *_proc);
 struct proc_w*  pop(struct mlfq *q);
-struct proc*    popproc();
+struct proc_w*  popproc();
 int             push(struct proc_w *procwrap);
 int             pushproc(struct proc_w *procwrap);
+int             boosting();
+void            newproc(struct proc *_proc);
 
 // project1_schedulerLocker.c
 void            schedulerLock(int password);

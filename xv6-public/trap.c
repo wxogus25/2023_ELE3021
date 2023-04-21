@@ -7,12 +7,14 @@
 #include "x86.h"
 #include "traps.h"
 #include "spinlock.h"
+#include "project1_mlfq.h"
 
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
 struct spinlock tickslock;
 uint ticks;
+extern struct mlfqs schedmlfq;
 
 void
 tvinit(void)
@@ -118,9 +120,15 @@ trap(struct trapframe *tf)
 
   // Force process to give up CPU on clock tick.
   // If interrupts were on while locks held, would need to check nlock.
-  if(myproc() && myproc()->state == RUNNING &&
-     tf->trapno == T_IRQ0+IRQ_TIMER)
-    yield();
+  if(myproc() && myproc()->state == RUNNING && tf->trapno == T_IRQ0+IRQ_TIMER){
+    schedmlfq.ticks++;
+    schedmlfq.timequantum++;
+    // global ticks이 100의 배수거나, 현재 프로세스의 timequantum을 모두 소비했으면서, 현재 schedulerLock이 실행된게 아니면
+    if(schedmlfq.ticks % 100 == 0 || (schedmlfq.timequantum == schedmlfq.quelevel * 2 + 4 && !schedmlfq.islock))
+      // 스케줄링 시작
+      yield();
+  }
+    
 
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
