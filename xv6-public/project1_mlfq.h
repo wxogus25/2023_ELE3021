@@ -29,5 +29,6 @@ struct mlfqs {
   int quelevel; // process의 que level
   int timequantum; // process의 남은 timequantum
   int islock; // 현재 scheduler lock이 수행중인지
+  int isTimeinterrupt; // time interrupt가 발생해서 스케줄링 하는지 확인
   uint ticks; // global tick
 };

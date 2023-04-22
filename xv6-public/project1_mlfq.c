@@ -34,9 +34,7 @@ void procwrapinit(struct proc_w *procwrap, struct proc *_proc, int level, int pr
 // 해당 큐에서 헤드 제거하고 리턴
 struct proc_w *pop(struct mlfq *q) {
     struct queue *now = q->head, *prev = (void *)0;
-    //cprintf("pop run\n");
     do{
-        //cprintf("%d ", now->procwrap.procptr->state);
         if(now->procwrap.procptr->state == RUNNABLE){
             if(now == q->head){
                 if(now == q->tail){
@@ -63,7 +61,6 @@ struct proc_w *pop(struct mlfq *q) {
             now = now->next;
         }
     }while(now);
-    //cprintf("\n");
 
     // 해당 큐에 RUNNABLE한 proc이 없으면 0 반환
     return 0;
@@ -82,14 +79,11 @@ struct proc_w *popproc() {
         if (!q->head){
             continue;
         }
-        //cprintf("not empty queue\n");
         if((popped = pop(q))){
             return popped;
         }
     }
     return 0;
-    // 큐에 RUNNABLE한 proc이 하나도 없으면 panic emit
-    // panic("queue is empty, but pop");
 }
 
 // RUNNABLE이나 SLEEPING이 아니면 제거
@@ -133,7 +127,6 @@ int statepop(struct mlfq *q) {
 // schedmlfq 안에 있는 zombie, unused 등 사용하지 않는 노드 제거
 // 제거한 노드 개수 반환
 int clearmlfq() {
-    //cprintf("clearmlfq\n");
     struct mlfq *qs = schedmlfq.mlfql;
     struct mlfq *q = qs;
     int cnt = 0;
@@ -165,7 +158,6 @@ int push(struct proc_w *procwrap) {
     if (node == &q->procqueue[QUESIZE]){
         panic("queue is full, but push");
     }
-    //cprintf("node found ");
     // node에 proc 매칭
     node->procwrap.procptr = procwrap->procptr;
     node->procwrap.priority = procwrap->priority;
@@ -176,14 +168,12 @@ int push(struct proc_w *procwrap) {
     node->isused = 1;
 
     // 큐가 비어있지 않으면 level에 큐 삽입
-    //cprintf("%d %p %p %p ", level, q->procqueue, q->head, node);
     if (q->head) {
         q->tail->next = node;
         q->tail = node;
     } else {  // 큐가 비어있으면
         q->tail = q->head = node;
     }
-    //cprintf("%p\n", q->head);
 
     return 0;
 }
@@ -231,11 +221,10 @@ int pushproc(struct proc_w *procwrap) {
 }
 
 void newproc(struct proc *_proc) {
-    //cprintf("newproc ");
     struct proc_w _procw;
     clearmlfq();
     procwrapinit(&_procw, _proc, 0, 3, 4, 1);
-    //cprintf("%d \n", pushproc(&_procw));
+    pushproc(&_procw);
 }
 
 // priority boosting
@@ -248,7 +237,6 @@ int boosting(){
     int cnt = 0;
 
     // RUNNABLE, SLEEPING 제외하고 전부 제거
-    //cprintf("boosting ");
     clearmlfq();
     // 큐 전부 초기화하면서 큐 순서대로 temp에 저장
     for (; q < &qs[LEVELSIZE]; q++) {

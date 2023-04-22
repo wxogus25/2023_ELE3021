@@ -346,6 +346,11 @@ scheduler(void)
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     // 일단 cpu 잡았으면 무조건 반환할때 1 tick 감소됨
+    // 타이머 인터럽트가 아닌 다른 것으로 반환되면 1 감소
+    if(!schedmlfq.isTimeinterrupt){
+      schedmlfq.timequantum--;
+      schedmlfq.isTimeinterrupt = 0;
+    }
     p = schedmlfq.nowproc;
     // 초기에는 mlfq로 인해 실행되는 프로세스가 없으니 확인 필요
     if(p != 0){
@@ -385,7 +390,7 @@ scheduler(void)
               pushproc(&_proc);
             }
           }
-        }else{ // islock이 참인 상황
+        } else { // islock이 참인 상황
           // 현재 프로세스가 lock된 프로세스임에도 scheduler에 진입했다는 것은
           // boosting, yield, sleep 중 하나인데 boosting은 위에서 확인했으므로 아님
           // yield와 sleep은 lock된 동안 무시하도록 구현 됨
@@ -451,10 +456,6 @@ sched(void)
   if (readeflags() & FL_IF)  // 인터럽트 해제 확인
     panic("sched interruptible");
   intena = mycpu()->intena;
-
-  // 반환하면 해당 틱도 사용한 것으로 간주한다.
-  schedmlfq.timequantum--;
-
   swtch(&p->context, mycpu()->scheduler);
   mycpu()->intena = intena;
 }
