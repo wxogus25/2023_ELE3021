@@ -94,11 +94,14 @@ found:
   p->state = EMBRYO;
   p->pid = nextpid++;
 
+  // proc mlfq에 추가
+  newproc(p);
   release(&ptable.lock);
 
   // Allocate kernel stack.
   if((p->kstack = kalloc()) == 0){
     p->state = UNUSED;
+    // 여기서 지우기
     return 0;
   }
   sp = p->kstack + KSTACKSIZE;
@@ -154,7 +157,6 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
-  newproc(p);
 
   release(&ptable.lock);
 }
@@ -200,6 +202,7 @@ fork(void)
     kfree(np->kstack);
     np->kstack = 0;
     np->state = UNUSED;
+    // 여기서 지우기
     return -1;
   }
   np->sz = curproc->sz;
@@ -221,7 +224,6 @@ fork(void)
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
-  newproc(np);
 
   release(&ptable.lock);
 
@@ -303,6 +305,7 @@ wait(void)
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
+        // 여기서 제거
         release(&ptable.lock);
         return pid;
       }
@@ -335,6 +338,7 @@ scheduler(void)
   c->proc = 0;
   struct proc_w _proc;
   struct proc_w *wp;
+  int pass = 0; // L2 큐에서 실행 중이면 pop pass
 
   for(;;){
     // Enable interrupts on this processor.
@@ -342,27 +346,57 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+
     p = schedmlfq.nowproc;
-    // bosting
-    if(schedmlfq.ticks % 100 == 0){
-      boosting();
-      if (p->state == RUNNABLE || p->state == SLEEPING) {
-        procwrapinit(&_proc, p, -1, 3);
-        pushproc(&_proc);
+    // 일단 cpu 잡았으면 무조건 반환할때 1 tick 감소
+    // scheduler lock 되었어도 감소해야 얼마나 실행했나 계산 가능
+    schedmlfq.timequantum--;
+    // 초기에는 mlfq로 인해 실행되는 프로세스가 없으니 확인 필요
+    if(p != 0){
+      // boosting
+      if(schedmlfq.ticks % 100 == 0){ // global tick은 p->state 가 running일때만 증가해서 SLEEPING 체크는 사실상 필요없음
+        if (p->state == RUNNABLE || p->state == SLEEPING) {
+          procwrapinit(&_proc, p, schedmlfq.quelevel, schedmlfq.priority, schedmlfq.timequantum, 1);
+          pushproc(&_proc);
+        }
+        // islock이 0이 아니면 내부에서 알아서 헤더로 옮겨 줌
+        boosting();
+      }else{
+        // scheduler unlock
+        if(schedmlfq.islock == -1){
+          procwrapinit(&_proc, p, 0, 3, 4, 1);
+          headpush(&_proc);
+          schedmlfq.islock = 0;
+        }else if(!schedmlfq.islock){
+          if (schedmlfq.timequantum == 0) {  // timequantum 모두 소비했으면 스케줄링 규칙에 따라 변경
+            if (p->state == RUNNABLE || p->state == SLEEPING) {
+              procwrapinit(&_proc, p, schedmlfq.quelevel, schedmlfq.priority, -1, 0);
+              pushproc(&_proc);
+            }
+          } else if(schedmlfq.quelevel == 2) {  // 모두 소비하지 않았으면서 L2에 있으면 계속 실행
+            pass = 1;
+          } else { // 모두 소비하지 않았으면서 L2가 아니면 다시 같은 레벨 큐에 집어넣음
+            if (p->state == RUNNABLE || p->state == SLEEPING) {
+              procwrapinit(&_proc, p, schedmlfq.quelevel, schedmlfq.priority, schedmlfq.timequantum, 1);
+              pushproc(&_proc);
+            }
+          }
+        }
       }
     }else{
-      // 실행하고 있던 프로세스 다시 schedmlfq로 이동
-      if(p->state == RUNNABLE || p->state == SLEEPING){
-        procwrapinit(&_proc, p, schedmlfq.quelevel, schedmlfq.priority);
-        pushproc(&_proc);
-      }
+      if (schedmlfq.ticks % 100 == 0)
+        boosting();
     }
-    // schedmlfq에서 pop
-    wp = popproc();
-    schedmlfq.priority = wp->priority;
-    schedmlfq.quelevel = wp->quelevel;
-    schedmlfq.timequantum = 0;
-    p = wp->procptr;
+    // islock이 아니면서 L2 큐가 아니면
+    if (!schedmlfq.islock && !pass){
+      // schedmlfq에서 pop
+      wp = popproc();
+      schedmlfq.priority = wp->priority;
+      schedmlfq.quelevel = wp->quelevel;
+      schedmlfq.timequantum = wp->timequantum;
+      schedmlfq.nowproc = wp->procptr;
+      p = wp->procptr;
+    }
 
     // Switch to chosen process.  It is the process's job
     // to release ptable.lock and then reacquire it
