@@ -1,7 +1,11 @@
 #include "types.h"
 #include "defs.h"
+#include "param.h"
+#include "memlayout.h"
+#include "mmu.h"
+#include "x86.h"
+#include "spinlock.h"
 #include "project_define.h"
-#include "proc.h"
 #include "project1_mlfq.h"
 
 extern struct mlfqs schedmlfq;

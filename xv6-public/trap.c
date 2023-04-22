@@ -3,7 +3,6 @@
 #include "param.h"
 #include "memlayout.h"
 #include "mmu.h"
-#include "proc.h"
 #include "x86.h"
 #include "traps.h"
 #include "spinlock.h"
@@ -146,13 +145,14 @@ trap(struct trapframe *tf)
   // Force process to give up CPU on clock tick.
   // If interrupts were on while locks held, would need to check nlock.
   if(myproc() && myproc()->state == RUNNING && tf->trapno == T_IRQ0+IRQ_TIMER){
+    // global ticks은 time interrupt로 증가하는 경우 밖에 없음
     schedmlfq.ticks++;
+    // timequantum은 time interrupt 발생 + sched 함수 호출로 증가함
+    schedmlfq.timequantum--;
     // global ticks이 100의 배수거나, 현재 schedulerLock이 실행된게 아니면
     if(schedmlfq.ticks % 100 == 0 || schedmlfq.islock < 1)
       // 스케줄링 시작
       yield();
-    else // lock 걸렸으면 pass
-      schedmlfq.timequantum--;
   }
     
 

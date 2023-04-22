@@ -202,7 +202,6 @@ void            mycall(void);
 
 // project1_mlfq.c
 void            procwrapinit(struct proc_w *procwrap, struct proc *_proc, int level, int priority, int timequantum, int isset);
-struct proc_w*  findprocwrap(struct proc *_proc);
 struct proc_w*  pop(struct mlfq *q);
 struct proc_w*  popproc();
 int             push(struct proc_w *procwrap);
@@ -212,6 +211,7 @@ void            newproc(struct proc *_proc);
 int             statepop(struct mlfq *q);
 int             clearmlfq();
 int             headpush(struct proc_w *procwrap);
+void            mlfqinit();
 
 // project1_schedulerLocker.c
 void            schedulerLock(int password);

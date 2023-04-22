@@ -4,7 +4,6 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "x86.h"
-#include "proc.h"
 #include "spinlock.h"
 #include "project_define.h"
 #include "project1_mlfq.h"
@@ -155,7 +154,7 @@ userinit(void)
   // writes to be visible, and the lock is also needed
   // because the assignment might not be atomic.
   acquire(&ptable.lock);
-
+  
   p->state = RUNNABLE;
 
   release(&ptable.lock);
@@ -196,7 +195,7 @@ fork(void)
   if((np = allocproc()) == 0){
     return -1;
   }
-
+  //cprintf("fork\n");
   // Copy process state from proc.
   if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
     kfree(np->kstack);
@@ -338,6 +337,7 @@ scheduler(void)
   c->proc = 0;
   struct proc_w _proc;
   struct proc_w *wp;
+  schedmlfq.ticks = 1;
 
   for(;;){
     // Enable interrupts on this processor.
@@ -345,15 +345,14 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-
+    // 일단 cpu 잡았으면 무조건 반환할때 1 tick 감소됨
     p = schedmlfq.nowproc;
-    // 일단 cpu 잡았으면 무조건 반환할때 1 tick 감소
-    // scheduler lock 되었어도 감소해야 얼마나 실행했나 계산 가능
-    schedmlfq.timequantum--;
     // 초기에는 mlfq로 인해 실행되는 프로세스가 없으니 확인 필요
     if(p != 0){
       // boosting
-      if(schedmlfq.ticks % 100 == 0){ // global tick은 p->state 가 running일때만 증가해서 SLEEPING 체크는 사실상 필요없음
+      if(schedmlfq.ticks % 100 == 0){
+        // global tick은 p->state가 running일때만 증가해서 SLEEPING 체크는 사실상 필요없음
+        // 만약, sched에서 timequantum과 같이 global tick을 감소시킨다면 그때는 의도대로 동작함
         if (p->state == RUNNABLE || p->state == SLEEPING) {
           procwrapinit(&_proc, p, schedmlfq.quelevel, schedmlfq.priority, schedmlfq.timequantum, 1);
           pushproc(&_proc);
@@ -367,22 +366,31 @@ scheduler(void)
           headpush(&_proc);
           schedmlfq.islock = 0;
         }else if(!schedmlfq.islock){
-          if (schedmlfq.timequantum == 0) {  // timequantum 모두 소비했으면 스케줄링 규칙에 따라 변경
+          if (schedmlfq.timequantum == 0) {
+            // timequantum 모두 소비했으면 스케줄링 규칙에 따라 변경
             if (p->state == RUNNABLE || p->state == SLEEPING) {
               procwrapinit(&_proc, p, schedmlfq.quelevel, schedmlfq.priority, -1, 0);
               pushproc(&_proc);
             }
-          } else if(schedmlfq.quelevel == 2) {  // 모두 소비하지 않았으면서 L2에 있으면 다시 큐의 헤드에 넣음
+          } else if(schedmlfq.quelevel == 2) {
+            // 모두 소비하지 않았으면서 L2에 있으면 다시 큐의 헤드에 넣음
             if (p->state == RUNNABLE || p->state == SLEEPING) {
               procwrapinit(&_proc, p, 2, schedmlfq.priority, schedmlfq.timequantum, 1);
               headpush(&_proc);
             }
-          } else { // 모두 소비하지 않았으면서 L2가 아니면 다시 같은 레벨 큐에 집어넣음
+          } else {
+            // 모두 소비하지 않았으면서 L2가 아니면 다시 같은 레벨 큐에 집어넣음
             if (p->state == RUNNABLE || p->state == SLEEPING) {
               procwrapinit(&_proc, p, schedmlfq.quelevel, schedmlfq.priority, schedmlfq.timequantum, 1);
               pushproc(&_proc);
             }
           }
+        }else{ // islock이 참인 상황
+          // 현재 프로세스가 lock된 프로세스임에도 scheduler에 진입했다는 것은
+          // boosting, yield, sleep 중 하나인데 boosting은 위에서 확인했으므로 아님
+          // yield와 sleep은 lock된 동안 무시하도록 구현 됨
+          // 때문에 진입하면서 감소시켰던 timequantum을 다시 증가시킴
+          schedmlfq.timequantum++;
         }
       }
     }else{
@@ -392,11 +400,15 @@ scheduler(void)
     // islock이 아니면
     if (!schedmlfq.islock){
       // schedmlfq에서 pop
-      wp = popproc();
+      if((wp = popproc()) == 0){
+        release(&ptable.lock);
+        continue;
+      }
       schedmlfq.priority = wp->priority;
       schedmlfq.quelevel = wp->quelevel;
       schedmlfq.timequantum = wp->timequantum;
       schedmlfq.nowproc = wp->procptr;
+      schedmlfq.nowproc->isinmlfq = 0;
       p = wp->procptr;
     }
 
@@ -406,7 +418,6 @@ scheduler(void)
     c->proc = p;
     switchuvm(p);
     p->state = RUNNING;
-
     swtch(&(c->scheduler), p->context);
     switchkvm();
 
@@ -440,6 +451,10 @@ sched(void)
   if (readeflags() & FL_IF)  // 인터럽트 해제 확인
     panic("sched interruptible");
   intena = mycpu()->intena;
+
+  // 반환하면 해당 틱도 사용한 것으로 간주한다.
+  schedmlfq.timequantum--;
+
   swtch(&p->context, mycpu()->scheduler);
   mycpu()->intena = intena;
 }

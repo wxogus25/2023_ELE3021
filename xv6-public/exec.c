@@ -20,7 +20,6 @@ exec(char *path, char **argv)
   struct proc *curproc = myproc();
 
   begin_op();
-
   if((ip = namei(path)) == 0){
     end_op();
     cprintf("exec: fail\n");
@@ -37,7 +36,6 @@ exec(char *path, char **argv)
 
   if((pgdir = setupkvm()) == 0)
     goto bad;
-
   // Load program into memory.
   sz = 0;
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
@@ -59,7 +57,6 @@ exec(char *path, char **argv)
   iunlockput(ip);
   end_op();
   ip = 0;
-
   // Allocate two pages at the next page boundary.
   // Make the first inaccessible.  Use the second as the user stack.
   sz = PGROUNDUP(sz);
@@ -67,7 +64,6 @@ exec(char *path, char **argv)
     goto bad;
   clearpteu(pgdir, (char*)(sz - 2*PGSIZE));
   sp = sz;
-
   // Push argument strings, prepare rest of stack in ustack.
   for(argc = 0; argv[argc]; argc++) {
     if(argc >= MAXARG)

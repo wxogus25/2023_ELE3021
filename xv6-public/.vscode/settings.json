@@ -6,6 +6,10 @@
         "project_define.h": "c",
         "mmu.h": "c",
         "spinlock.h": "c",
-        "project1_mlfq.h": "c"
+        "project1_mlfq.h": "c",
+        "types.h": "c",
+        "memlayout.h": "c",
+        "x86.h": "c",
+        "user.h": "c"
     }
 }
