@@ -16,6 +16,9 @@ struct spinlock tickslock;
 uint ticks;
 extern struct mlfqs schedmlfq;
 
+extern int sys_schedulerLock(void);
+extern int sys_schedulerUnlock(void);
+
 void
 tvinit(void)
 {
@@ -27,6 +30,10 @@ tvinit(void)
 
   // user mode로 수행 가능한 128번 interrupt 추가
   SETGATE(idt[128], 1, SEG_KCODE<<3, vectors[128], DPL_USER);
+  // scheduler lock
+  SETGATE(idt[129], 1, SEG_KCODE<<3, vectors[128], DPL_USER);
+  // scheduler unlock
+  SETGATE(idt[130], 1, SEG_KCODE<<3, vectors[128], DPL_USER);
 
   initlock(&tickslock, "time");
 }
@@ -61,6 +68,24 @@ trap(struct trapframe *tf)
     myproc()->tf->eax = 0;
     if (myproc()->killed)
       exit();
+    return;
+  }
+
+  // 129번 scheduler lock
+  if (tf->trapno == 129) {
+    if (myproc()->killed) exit();
+    myproc()->tf = tf;
+    myproc()->tf->eax = sys_schedulerLock();
+    if (myproc()->killed) exit();
+    return;
+  }
+
+  // 130번 scheduler unlock
+  if (tf->trapno == 130) {
+    if (myproc()->killed) exit();
+    myproc()->tf = tf;
+    myproc()->tf->eax = sys_schedulerUnlock();
+    if (myproc()->killed) exit();
     return;
   }
 
@@ -126,7 +151,7 @@ trap(struct trapframe *tf)
     if(schedmlfq.ticks % 100 == 0 || schedmlfq.islock < 1)
       // 스케줄링 시작
       yield();
-    else
+    else // lock 걸렸으면 pass
       schedmlfq.timequantum--;
   }
     

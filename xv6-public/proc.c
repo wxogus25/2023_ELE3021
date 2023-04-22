@@ -338,7 +338,6 @@ scheduler(void)
   c->proc = 0;
   struct proc_w _proc;
   struct proc_w *wp;
-  int pass = 0; // L2 큐에서 실행 중이면 pop pass
 
   for(;;){
     // Enable interrupts on this processor.
@@ -373,8 +372,11 @@ scheduler(void)
               procwrapinit(&_proc, p, schedmlfq.quelevel, schedmlfq.priority, -1, 0);
               pushproc(&_proc);
             }
-          } else if(schedmlfq.quelevel == 2) {  // 모두 소비하지 않았으면서 L2에 있으면 계속 실행
-            pass = 1;
+          } else if(schedmlfq.quelevel == 2) {  // 모두 소비하지 않았으면서 L2에 있으면 다시 큐의 헤드에 넣음
+            if (p->state == RUNNABLE || p->state == SLEEPING) {
+              procwrapinit(&_proc, p, 2, schedmlfq.priority, schedmlfq.timequantum, 1);
+              headpush(&_proc);
+            }
           } else { // 모두 소비하지 않았으면서 L2가 아니면 다시 같은 레벨 큐에 집어넣음
             if (p->state == RUNNABLE || p->state == SLEEPING) {
               procwrapinit(&_proc, p, schedmlfq.quelevel, schedmlfq.priority, schedmlfq.timequantum, 1);
@@ -387,8 +389,8 @@ scheduler(void)
       if (schedmlfq.ticks % 100 == 0)
         boosting();
     }
-    // islock이 아니면서 L2 큐가 아니면
-    if (!schedmlfq.islock && !pass){
+    // islock이 아니면
+    if (!schedmlfq.islock){
       // schedmlfq에서 pop
       wp = popproc();
       schedmlfq.priority = wp->priority;

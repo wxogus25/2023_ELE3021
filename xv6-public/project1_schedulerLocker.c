@@ -42,7 +42,7 @@ void schedulerUnlock(int password) {
 // wrapper function
 int sys_schedulerLock(void) {
     int psword;
-    if (fetchint(0, &psword) < 0) {
+    if (argint(0, &psword) < 0) {
         return -1;
     }
     schedulerLock(psword);
@@ -52,7 +52,7 @@ int sys_schedulerLock(void) {
 // wrapper function
 int sys_schedulerUnlock(void) {
     int psword;
-    if (fetchint(0, &psword) < 0) {
+    if (argint(0, &psword) < 0) {
         return -1;
     }
     schedulerLock(psword);
