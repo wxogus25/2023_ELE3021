@@ -349,7 +349,6 @@ scheduler(void)
     // 타이머 인터럽트가 아닌 다른 것으로 반환되면 1 감소
     if(!schedmlfq.isTimeinterrupt){
       schedmlfq.timequantum--;
-      schedmlfq.isTimeinterrupt = 0;
     }
     p = schedmlfq.nowproc;
     // 초기에는 mlfq로 인해 실행되는 프로세스가 없으니 확인 필요
@@ -378,10 +377,17 @@ scheduler(void)
               pushproc(&_proc);
             }
           } else if(schedmlfq.quelevel == 2) {
-            // 모두 소비하지 않았으면서 L2에 있으면 다시 큐의 헤드에 넣음
-            if (p->state == RUNNABLE || p->state == SLEEPING) {
-              procwrapinit(&_proc, p, 2, schedmlfq.priority, schedmlfq.timequantum, 1);
-              headpush(&_proc);
+            // 모두 소비하지 않았으면서 L2에 있고, TimeInterrupt로 인해 스케줄링 되면 다시 맨 앞에 집어넣음
+            if(schedmlfq.isTimeinterrupt){
+              if (p->state == RUNNABLE || p->state == SLEEPING) {
+                procwrapinit(&_proc, p, 2, schedmlfq.priority, schedmlfq.timequantum, 1);
+                headpush(&_proc);
+              }
+            }else{ // 만약, TimeInterrupt가 아닌 yield나 sleep으로 인해 스케줄링 되면 맨 끝으로 이동
+              if (p->state == RUNNABLE || p->state == SLEEPING) {
+                procwrapinit(&_proc, p, 2, schedmlfq.priority, schedmlfq.timequantum, 1);
+                pushproc(&_proc);
+              }
             }
           } else {
             // 모두 소비하지 않았으면서 L2가 아니면 다시 같은 레벨 큐에 집어넣음
@@ -415,6 +421,7 @@ scheduler(void)
       if (schedmlfq.ticks % 100 == 0)
         boosting();
     }
+    schedmlfq.isTimeinterrupt = 0;
     // islock이 아니면
     if (!schedmlfq.islock){
       // schedmlfq에서 pop
