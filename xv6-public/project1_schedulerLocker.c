@@ -19,7 +19,7 @@ printProcessState(void)
 
 // 해당 프로세스가 우선적으로 스케줄링 되도록 함
 // password 불일치하면 exit
-// yield, sleep 등 무시
+// yield 무시
 void
 schedulerLock(int password)
 {

@@ -151,6 +151,7 @@ trap(struct trapframe *tf)
     schedmlfq.timequantum--;
     // global ticks이 100의 배수거나, 현재 schedulerLock이 실행된게 아니면
     if(schedmlfq.ticks % 100 == 0 || schedmlfq.islock < 1){
+      // Time Interrupt로 인한
       schedmlfq.isTimeinterrupt = 1;
       // 스케줄링 시작
       yield();

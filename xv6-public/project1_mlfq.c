@@ -21,13 +21,16 @@ procwrapinit(struct proc_w *procwrap, struct proc *_proc, int level, int priorit
     procwrap->priority = priority;
     procwrap->timequantum = timequantum;
   }else{
+    // level이 2이면 우선순위 증가(priority 값 감소)
     if(level == 2){
       procwrap->quelevel = level;
       procwrap->priority = priority == 0 ? 0 : (priority - 1);
     }else{
+      // level이 2가 아니면 다음 레벨의 큐로 이동
       procwrap->quelevel = level + 1;
       procwrap->priority = priority;
     }
+    // 해당하는 레벨에 맞는 timequantum 설정
     procwrap->timequantum = procwrap->quelevel * 2 + 4;
   }
   procwrap->procptr = _proc;
@@ -39,7 +42,9 @@ pop(struct mlfq *q)
 {
   struct queue *now = q->head, *prev = (void *)0;
   do{
+    // RUNNABLE이면
     if(now->procwrap.procptr->state == RUNNABLE){
+      // head에서 제거 처리
       if(now == q->head){
         if(now == q->tail){
           q->head = q->tail = 0;
@@ -49,16 +54,20 @@ pop(struct mlfq *q)
         now->isused = 0;
         now->next = 0;
       }else if(now == q->tail){
+        // tail에서 제거 처리
         now->isused = 0;
         now->next = 0;
         prev->next = 0;
         q->tail = prev;
       }else{
+        // head와 tail사이에서 제거 처리
         prev->next = now->next;
         now->isused = 0;
         now->next = 0;
       }
+      // MLFQ에서 사용하지 않음을 프로세스에 체크
       now->procwrap.procptr->isinmlfq = 0;
+      // proc_w 주소 반환
       return &now->procwrap;
     }else{
       prev = now;
@@ -99,8 +108,11 @@ statepop(struct mlfq *q)
   struct queue *now = q->head, *prev = (void *)0;
   int cnt = 0;
   do {
+    // RUNNABLE이나 SLEEPING이 아니면
     if (now->procwrap.procptr->state != RUNNABLE && now->procwrap.procptr->state != SLEEPING) {
+      // now가 head인 경우
       if (now == q->head) {
+        // head와 tail 처리
         if (now == q->tail) {
           q->head = q->tail = 0;
         } else {
@@ -110,24 +122,28 @@ statepop(struct mlfq *q)
         now->next = 0;
         now = q->head;
       } else if (now == q->tail) {
+        // now가 tail인 경우 tail 처리
         now->isused = 0;
         now->next = 0;
         prev->next = 0;
         q->tail = prev;
         now = 0;
       } else {
+        // now가 head와 tail 사이인 경우 처리
         prev->next = now->next;
         now->isused = 0;
         now->next = 0;
         now = prev->next;
       }
+      // MLFQ에서 사용하지 않음을 프로세스에 표시
       now->procwrap.procptr->isinmlfq = 0;
       cnt++;
     } else {
+      // 조건에 불일치하면 다음 노드 확인
       prev = now;
       now = now->next;
     }
-  } while (now);
+  } while (now); // 해당 레벨의 큐를 모두 확인할 때까지 반복
 
   return cnt;
 }
@@ -236,12 +252,16 @@ pushproc(struct proc_w *procwrap)
   return push(procwrap);
 }
 
+// allocproc 같이 새로운 프로세스가 추가될 때 사용
 void
 newproc(struct proc *_proc)
 {
   struct proc_w _procw;
+  // 사용하지 않는 노드 제거
   clearmlfq();
+  // MLFQ에 넣을 노드 셋팅
   procwrapinit(&_procw, _proc, 0, 3, 4, 1);
+  // 노드 삽입
   pushproc(&_procw);
 }
 
@@ -259,7 +279,7 @@ boosting()
 
   // RUNNABLE, SLEEPING 제외하고 전부 제거
   clearmlfq();
-  // 큐 전부 초기화하면서 큐 순서대로 temp에 저장
+  // MLFQ 전부 초기화하면서 큐 순서대로 temp에 저장
   for (; q < &qs[LEVELSIZE]; q++) {
     if(!q->head)
       continue;
@@ -277,24 +297,21 @@ boosting()
     q->head = q->tail = 0;
   }
 
-  // 만약 lock 된 상태였으면 먼저 큐에 집어넣음
-  if(schedmlfq.islock){
-    for (int i = 0; i < cnt; i++) {
-      if (temp[i] == schedmlfq.nowproc){
-        procwrapinit(&_proc, temp[i], 0, 3, 4, 1);
-        pushproc(&_proc);
-        break;
-      }
-    }
-  }
-
+  // lock된 프로세스가 있다면, 그것만 제외하고 전부 L0에 삽입
   for (int i = 0; i < cnt; i++) {
     if(schedmlfq.islock && temp[i] == schedmlfq.nowproc)
       continue;
     procwrapinit(&_proc, temp[i], 0, 3, 4, 1);
     pushproc(&_proc);
   }
-  // boosting 했으면 islock 0으로 변경
+
+  // 만약 lock된 상태였으면 L0 큐의 헤더로 삽입
+  if(schedmlfq.islock){
+    procwrapinit(&_proc, schedmlfq.nowproc, 0, 3, 4, 1);
+    headpush(&_proc);
+  }
+
+  // boosting 했으면 lock 해제
   schedmlfq.islock = 0;
   schedmlfq.lockproc = 0;
   // global tick 초기화

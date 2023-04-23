@@ -5,7 +5,7 @@ struct proc_w {
   struct proc *procptr;      // 가리키고있는 procptr
   int priority;          // Process 우선순위, 초기값 3, 값이 작을수록 우선순위 높음
   int quelevel;          // Process가 위치한 대기 큐 레벨
-  int timequantum;         // Process가 실행된 만큼의 tick
+  int timequantum;         // Process의 남아있는 timequantum
 };
 
 struct queue {
