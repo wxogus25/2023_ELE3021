@@ -211,7 +211,6 @@ void            newproc(struct proc *_proc);
 int             statepop(struct mlfq *q);
 int             clearmlfq();
 int             headpush(struct proc_w *procwrap);
-void            mlfqinit();
 
 // project1_schedulerLocker.c
 void            schedulerLock(int password);

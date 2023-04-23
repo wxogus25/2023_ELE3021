@@ -27,7 +27,7 @@ getLevel(void)
 void
 setPriority(int pid, int priority)
 {
-  if(pid == schedmlfq.nowproc->pid)
+  if(pid == schedmlfq.nowproc->pid && priority >= 0 && priority <= 3)
     schedmlfq.priority = priority;
 }
 
