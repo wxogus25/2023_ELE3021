@@ -50,8 +50,6 @@ int fork_children3() {
     return parent;
 }
 void exit_children() {
-    printf(1, "exit unlock test\n");
-    schedulerLock(2018009116);
     if (getpid() != parent) exit();
     while (wait() != -1)
         ;
@@ -63,16 +61,10 @@ int main(int argc, char *argv[]) {
     //  int child;
 
     parent = getpid();
-    if(argv[1][0] == 'c'){
-        schedulerLock(201135);
-    }
     printf(1, "MLFQ test start\n");
 
-    printf(1, "[Test 3] default\n");
-    schedulerLock(2018009116);
-    sleep(10);
-    schedulerUnlock(2018009116);
-    pid = fork_children3();
+    printf(1, "[Test 1] default\n");
+    pid = fork_children();
 
     if (pid != parent) {
         for (i = 0; i < NUM_LOOP; i++) {
@@ -87,7 +79,7 @@ int main(int argc, char *argv[]) {
         for (i = 0; i < MAX_LEVEL; i++) printf(1, "L%d: %d\n", i, count[i]);
     }
     exit_children();
-    printf(1, "[Test 3] finished\n");
+    printf(1, "[Test 1] finished\n");
     printf(1, "done\n");
     exit();
 }
