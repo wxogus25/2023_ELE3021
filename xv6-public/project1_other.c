@@ -9,7 +9,7 @@
 #include "project1_mlfq.h"
 
 extern struct mlfqs schedmlfq;
-// 다음 프로세스에세 프로세서 양보
+// 다음 프로세스에게 프로세서 양보
 void myYield(void) {
     yield();
 }

@@ -25,6 +25,7 @@ struct mlfqs {
   // PRIORITY 만큼의 큐를 더 만들어서 같은 우선순위끼리 FCFS가 가능하도록 한다.
   struct mlfq mlfql[LEVELSIZE];
   struct proc *nowproc;
+  struct proc *lockproc; // lockproc 확인용
   int priority; // process의 priority
   int quelevel; // process의 que level
   int timequantum; // process의 남은 timequantum

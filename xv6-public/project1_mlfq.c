@@ -235,6 +235,7 @@ int boosting(){
     struct proc *temp[QUESIZE];
     struct proc_w _proc;
     int cnt = 0;
+    //cprintf("boosting\n");
 
     // RUNNABLE, SLEEPING 제외하고 전부 제거
     clearmlfq();
@@ -275,7 +276,8 @@ int boosting(){
     }
     // boosting 했으면 islock 0으로 변경
     schedmlfq.islock = 0;
+    schedmlfq.lockproc = 0;
     // global tick 초기화
-    schedmlfq.ticks = 0;
+    schedmlfq.ticks = 1;
     return 0;
 }

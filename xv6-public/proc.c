@@ -392,10 +392,23 @@ scheduler(void)
           }
         } else { // islock이 참인 상황
           // 현재 프로세스가 lock된 프로세스임에도 scheduler에 진입했다는 것은
-          // boosting, yield, sleep 중 하나인데 boosting은 위에서 확인했으므로 아님
-          // yield와 sleep은 lock된 동안 무시하도록 구현 됨
-          // 때문에 진입하면서 감소시켰던 timequantum을 다시 증가시킴
-          schedmlfq.timequantum++;
+          // boosting, yield, sleep, exit 중 하나인데 boosting은 위에서 확인했으므로 아님
+          if(schedmlfq.nowproc->state == ZOMBIE){
+            //cprintf("unlock ZOMBIE\n");
+            schedmlfq.islock = 0;
+            schedmlfq.lockproc = 0;
+          } else if (schedmlfq.nowproc->state == SLEEPING) {
+            // SLEEPING 이면 unlock으로 간주하고 L0 큐로 이동
+            //cprintf("unlock SLEEPING\n");
+            schedmlfq.islock = 0;
+            schedmlfq.lockproc = 0;
+            procwrapinit(&_proc, p, 0, 3, 4, 1);
+            headpush(&_proc);
+          } else {
+            // yield은 lock된 동안 무시하도록 구현 됨
+            // 때문에 진입하면서 감소시켰던 timequantum을 다시 증가시킴
+            schedmlfq.timequantum++;
+          }
         }
       }
     }else{
