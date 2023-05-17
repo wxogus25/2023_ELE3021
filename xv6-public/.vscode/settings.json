@@ -11,6 +11,9 @@
         "memlayout.h": "c",
         "x86.h": "c",
         "user.h": "c",
-        "param.h": "c"
+        "param.h": "c",
+        "stat.h": "c",
+        "elf.h": "c",
+        "project2_thread.h": "c"
     }
 }

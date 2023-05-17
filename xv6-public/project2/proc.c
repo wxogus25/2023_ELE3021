@@ -88,6 +88,9 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  // p의 memlimit, stacksize 0으로 설정
+  p->memlimit = 0;
+  p->stacksize = 0;
 
   release(&ptable.lock);
 
@@ -295,6 +298,9 @@ wait(void)
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
+        // p의 memlimit, stacksize 0으로 초기화
+        p->memlimit = 0;
+        p->stacksize = 0;
         release(&ptable.lock);
         return pid;
       }
