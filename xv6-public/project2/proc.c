@@ -210,44 +210,47 @@ int fork(void) {
   int i, pid;
   struct proc *np;
   struct proc *curproc = myproc();
+  struct proc *main;
   // Allocate process.
   if ((np = allocproc()) == 0) {
     return -1;
   }
 
   if(curproc->mainthread != 0)
-    curproc = curproc->mainthread;
+    main = curproc->mainthread;
+  else
+    main = curproc;
 
   // Copy process state from proc.
-  if ((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0) {
+  if ((np->pgdir = copyuvm(main->pgdir, main->sz)) == 0) {
     kfree(np->kstack);
     np->kstack = 0;
     np->state = UNUSED;
     return -1;
   }
-  np->sz = curproc->sz;
+  np->sz = main->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
   for(i=0;i<MAXTHREAD;i++){
-    np->tstack[i] = curproc->tstack[i];
+    np->tstack[i] = main->tstack[i];
   }
   
-  np->memlimit = curproc->memlimit;
-  np->stacksize = curproc->stacksize;
+  np->memlimit = main->memlimit;
+  np->stacksize = main->stacksize;
   np->mainthread = 0;
   np->tid = 0;
   np->retval = 0;
-  np->pgcnt = curproc->pgcnt;
+  np->pgcnt = main->pgcnt;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
 
   for (i = 0; i < NOFILE; i++)
-    if (curproc->ofile[i])
-      np->ofile[i] = filedup(curproc->ofile[i]);
-  np->cwd = idup(curproc->cwd);
+    if (main->ofile[i])
+      np->ofile[i] = filedup(main->ofile[i]);
+  np->cwd = idup(main->cwd);
 
-  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+  safestrcpy(np->name, main->name, sizeof(main->name));
 
   pid = np->pid;
 
