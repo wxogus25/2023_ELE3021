@@ -5,5 +5,6 @@
 int main(int argc, char *argv[])
 {
   printf(1, "Hello, thread!\n");
+  sleep(100);
   exit();
 }

@@ -22,7 +22,8 @@ extern struct proc *initproc;
 
 // fork와 비슷한 방식으로 동작
 int thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
-    int i;
+    int i, idx = -1;
+    uint sz;
     struct proc *np;
     struct proc *curproc = myproc();
 
@@ -33,16 +34,30 @@ int thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
 
     acquire(&ptable.lock);
 
-    if(curproc->mainthread == 0){
-        np->mainthread = curproc;
-        curproc->tid += 1;
-        np->tid = curproc->tid;
-    }else{
-        np->mainthread = curproc->mainthread;
-        curproc->mainthread->tid += 1;
-        np->tid = curproc->mainthread->tid;
+    if(curproc->mainthread != 0){
         curproc = curproc->mainthread;
     }
+
+    if(curproc->memlimit != 0 && curproc->memlimit < curproc->sz + PGSIZE){
+        return -1;
+    }
+    
+    for(i=0;i<MAXTHREAD;i++){
+        if(curproc->tstack[i] == 0){
+            idx = i;
+            curproc->tstack[i] = 1;
+            break;
+        }
+    }
+
+    if(idx == -1){
+        panic("need more memory");
+        return -1;
+    }
+
+    // np의 thread 값 설정
+    np->mainthread = curproc;
+    np->tid = ++idx;
     *thread = np->tid;
 
     // np의 proc 값 설정
@@ -51,21 +66,10 @@ int thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
     np->tid = *thread;
     np->parent = curproc->parent;
     np->pid = curproc->pid;
-    np->cwd = curproc->cwd;
-    for(i=0;i<NOFILE;i++)
-        if(curproc->ofile[i])
-            np->ofile[i] = curproc->ofile[i];
+    sz = curproc->sz - curproc->pgcnt * PGSIZE;
 
-    // 스레드를 생성할 때 memlimit보다 커진다면 생성 안함
-    if(curproc->memlimit != 0 && curproc->memlimit < curproc->sz + 2 * PGSIZE * (np->tid + 1)){
-        curproc->tid -= 1;
-        np->state = UNUSED;
-        release(&ptable.lock);
-        return -1;
-    }
-
-    if((np->sz = allocuvm(np->pgdir, curproc->sz + 2 * PGSIZE * (np->tid), curproc->sz + 2 * PGSIZE * (np->tid + 1))) == 0){
-        curproc->tid -= 1;
+    if((np->sz = allocuvm(np->pgdir, sz + (idx - 1) * PGSIZE, sz + idx * PGSIZE)) == 0){
+        curproc->tstack[idx - 1] = 0;
         np->state = UNUSED;
         release(&ptable.lock);
         return -1;
@@ -79,11 +83,20 @@ int thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
     ustack[1] = (uint)arg;
 
     if (copyout(np->pgdir, np->sz - 8, ustack, 8) < 0) {
-        curproc->tid -= 1;
+        deallocuvm(np->pgdir, sz + idx * PGSIZE, sz + (idx - 1) * PGSIZE);
+        curproc->tstack[idx - 1] = 0;
         np->state = UNUSED;
         release(&ptable.lock);
         return -1;
     }
+
+    curproc->pgcnt += 1;
+    curproc->sz += PGSIZE;
+    curproc->tid += 1;
+    np->cwd = idup(curproc->cwd);
+    for (i = 0; i < NOFILE; i++)
+        if (curproc->ofile[i])
+            np->ofile[i] = filedup(curproc->ofile[i]);
 
     // 함수가 호출된 것처럼 되도록 설정
     np->tf->eip = (uint)start_rootine;
@@ -98,11 +111,21 @@ int thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
 // exit와 비슷한 방식으로 동작
 void thread_exit(void *retval){
     struct proc *curproc = myproc();
-    struct proc *p;
 
     if (curproc == initproc) panic("init exiting");
 
+    // fd ref 감소
+    for (int fd = 0; fd < NOFILE; fd++) {
+        if (curproc->ofile[fd]) {
+            fileclose(curproc->ofile[fd]);
+            curproc->ofile[fd] = 0;
+        }
+    }
+    begin_op();
+    iput(curproc->cwd);
+    end_op();
     curproc->cwd = 0;
+
     // return value 설정
     curproc->retval = retval;
 
@@ -110,14 +133,6 @@ void thread_exit(void *retval){
 
     // 부모가 아닌 join으로 대기 중인 main thread를 깨움
     wakeup1(curproc->mainthread);
-
-    // Pass abandoned children to init.
-    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
-        if (p->parent == curproc) {
-            p->parent = initproc;
-            if (p->state == ZOMBIE) wakeup1(initproc);
-        }
-    }
 
     // Jump into the scheduler, never to return.
     curproc->state = ZOMBIE;
@@ -133,6 +148,7 @@ void thread_exit(void *retval){
 int thread_join(thread_t thread, void **retval){
     struct proc *curproc = myproc();
     struct proc *p;
+    uint sz;
 
     acquire(&ptable.lock);
 
@@ -144,20 +160,33 @@ int thread_join(thread_t thread, void **retval){
             // Found one.
             kfree(p->kstack);
             p->kstack = 0;
+            sz = curproc->sz - curproc->pgcnt * PGSIZE;
+            deallocuvm(p->pgdir, sz + p->tid * PGSIZE, sz + (p->tid - 1) * PGSIZE);
             p->pid = 0;
             p->parent = 0;
             p->name[0] = 0;
             p->killed = 0;
             p->state = UNUSED;
-            // p의 memlimit, stacksize, mainthread, tid 0으로 초기화
+            // thread 관련 설정 초기화
             p->memlimit = 0;
             p->stacksize = 0;
             p->mainthread = 0;
+            p->pgcnt = 0;
+            curproc->tstack[p->tid - 1] = 0;
+            curproc->pgcnt -= 1;
+            curproc->sz -= PGSIZE;
             p->tid = 0;
             *retval = p->retval;
+            p->retval = 0;
             release(&ptable.lock);
             return 0;
         }
+
+        if(curproc->killed){
+            release(&ptable.lock);
+            return -1;
+        }
+
         sleep(curproc, &ptable.lock);
     }
 }

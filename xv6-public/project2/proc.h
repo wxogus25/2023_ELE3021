@@ -55,6 +55,9 @@ struct proc {
   thread_t tid;                     // 스레드 id, matinthread가 0일때 tid는 스레드 개수
   struct proc *mainthread;     // 0이면 메인, 0이 아니면 스레드
   void* retval;                // 스레드 return value
+  int tstack[MAXTHREAD];       // 메인스레드로부터 몇번째 위치(tid)의 메모리(페이지)가 사용중인지 확인하는 용도
+                               // 총 2048개 사용하며, 대략 8MB 정도 됨
+  int pgcnt;                   // sz를 제외한 할당된 페이지 개수
 };
 
 // Process memory is laid out contiguously, low addresses first:

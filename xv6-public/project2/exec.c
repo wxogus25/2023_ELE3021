@@ -101,20 +101,17 @@ exec(char *path, char **argv)
 
   acquire(&ptable.lock);
   for(struct proc *p = ptable.proc; p<&ptable.proc[NPROC];p++){
-    if(p->pid == curproc->pid && p != curproc && p->tid > 0){
-      p->state = ZOMBIE;
-      if (p->mainthread == 0) {
-        for (int fd = 0; fd < NOFILE; fd++) {
-          p->ofile[fd] = 0;
-        }
-        p->cwd = 0;
-      }
+    if(p->pid == curproc->pid && p != curproc && p->state != ZOMBIE){
+      p->killed = 1;
     }
   }
   release(&ptable.lock);
   int check = 0;
   if (curproc->mainthread == 0) {
     check = 1;
+    for (int i = 0; i < MAXTHREAD; i++) {
+      curproc->tstack[i] = 0;
+    }
   }
   // Commit to the user image.
   oldpgdir = curproc->pgdir;
@@ -125,6 +122,7 @@ exec(char *path, char **argv)
   curproc->tid = 0;
   curproc->mainthread = 0;
   curproc->retval = 0;
+  curproc->pgcnt = 0;
   switchuvm(curproc);
   if(check)
     freevm(oldpgdir);
