@@ -19,19 +19,16 @@ extern void forkret(void);
 extern void trapret(void);
 
 void wakeup1(void *chan);
-
 void
 pinit(void)
 {
   initlock(&ptable.lock, "ptable");
 }
-
 // Must be called with interrupts disabled
 int
 cpuid() {
   return mycpu()-cpus;
 }
-
 // Must be called with interrupts disabled to avoid the caller being
 // rescheduled between reading lapicid and running through the loop.
 struct cpu*
@@ -51,7 +48,6 @@ mycpu(void)
   }
   panic("unknown apicid\n");
 }
-
 // Disable interrupts so that we are not rescheduled
 // while reading proc from the cpu structure
 struct proc*
@@ -64,23 +60,19 @@ myproc(void) {
   popcli();
   return p;
 }
-
 //PAGEBREAK: 32
 // Look in the process table for an UNUSED proc.
 // If found, change state to EMBRYO and initialize
 // state required to run in the kernel.
 // Otherwise return 0.
-struct proc*
-allocproc(void)
-{
+struct proc *allocproc(void) {
   struct proc *p;
   char *sp;
 
   acquire(&ptable.lock);
 
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == UNUSED)
-      goto found;
+  for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    if (p->state == UNUSED) goto found;
 
   release(&ptable.lock);
   return 0;
@@ -98,7 +90,7 @@ found:
   release(&ptable.lock);
 
   // Allocate kernel stack.
-  if((p->kstack = kalloc()) == 0){
+  if ((p->kstack = kalloc()) == 0) {
     p->state = UNUSED;
     return 0;
   }
@@ -106,15 +98,15 @@ found:
 
   // Leave room for trap frame.
   sp -= sizeof *p->tf;
-  p->tf = (struct trapframe*)sp;
+  p->tf = (struct trapframe *)sp;
 
   // Set up new context to start executing at forkret,
   // which returns to trapret.
   sp -= 4;
-  *(uint*)sp = (uint)trapret;
+  *(uint *)sp = (uint)trapret;
 
   sp -= sizeof *p->context;
-  p->context = (struct context*)sp;
+  p->context = (struct context *)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
@@ -131,8 +123,6 @@ userinit(void)
 
   p = allocproc();
 
-  cprintf("suc");
-  
   initproc = p;
   if((p->pgdir = setupkvm()) == 0)
     panic("userinit: out of memory?");
@@ -163,35 +153,30 @@ userinit(void)
 
 // Grow current process's memory by n bytes.
 // Return 0 on success, -1 on failure.
-int
-growproc(int n)
-{
+int growproc(int n) {
   uint sz;
   int memlimit;
   struct proc *curproc = myproc();
 
   acquire(&ptable.lock);
 
-  if(curproc->mainthread == 0){
+  if (curproc->mainthread == 0) {
     sz = curproc->sz;
     memlimit = curproc->memlimit;
-  }
-  else{
+  } else {
     sz = curproc->mainthread->sz;
     memlimit = curproc->mainthread->memlimit;
   }
 
-  if (PGROUNDUP(sz + n) > memlimit) {
+  if (memlimit != 0 && PGROUNDUP(sz + n) > memlimit) {
     release(&ptable.lock);
     return -1;
   }
 
-  if(n > 0){
-    if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
-      return -1;
-  } else if(n < 0){
-    if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
-      return -1;
+  if (n > 0) {
+    if ((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0) return -1;
+  } else if (n < 0) {
+    if ((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0) return -1;
   }
   if (curproc->mainthread == 0)
     curproc->sz = sz;
@@ -207,20 +192,18 @@ growproc(int n)
 // Create a new process copying p as the parent.
 // Sets up stack to return as if from system call.
 // Caller must set state of returned proc to RUNNABLE.
-int
-fork(void)
-{
+int fork(void) {
   int i, pid;
   struct proc *np;
   struct proc *curproc = myproc();
 
   // Allocate process.
-  if((np = allocproc()) == 0){
+  if ((np = allocproc()) == 0) {
     return -1;
   }
 
   // Copy process state from proc.
-  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
+  if ((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0) {
     kfree(np->kstack);
     np->kstack = 0;
     np->state = UNUSED;
@@ -230,9 +213,9 @@ fork(void)
   np->parent = curproc;
   *np->tf = *curproc->tf;
   struct proc *main;
-  if(curproc->mainthread == 0){
+  if (curproc->mainthread == 0) {
     main = curproc;
-  }else{
+  } else {
     main = curproc->mainthread;
   }
   np->memlimit = main->memlimit;
@@ -241,9 +224,8 @@ fork(void)
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
 
-  for(i = 0; i < NOFILE; i++)
-    if(curproc->ofile[i])
-      np->ofile[i] = filedup(curproc->ofile[i]);
+  for (i = 0; i < NOFILE; i++)
+    if (curproc->ofile[i]) np->ofile[i] = filedup(curproc->ofile[i]);
   np->cwd = idup(curproc->cwd);
 
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
@@ -262,33 +244,29 @@ fork(void)
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait() to find out it exited.
-void
-exit(void)
-{
+void exit(void) {
   struct proc *curproc = myproc();
   struct proc *p;
   int fd;
 
-  if(curproc == initproc)
-    panic("init exiting");
+  if (curproc == initproc) panic("init exiting");
 
   // 모든 스레드는 메인 스레드의 ofile, cwd 공유
-  if(curproc->mainthread == 0){
-    for(fd = 0; fd < NOFILE; fd++){
-      if(curproc->ofile[fd]){
+  if (curproc->mainthread == 0) {
+    for (fd = 0; fd < NOFILE; fd++) {
+      if (curproc->ofile[fd]) {
         fileclose(curproc->ofile[fd]);
         curproc->ofile[fd] = 0;
       }
     }
-    if(curproc->cwd != 0){
+    if (curproc->cwd != 0) {
       begin_op();
       iput(curproc->cwd);
       end_op();
       curproc->cwd = 0;
     }
-  }else{
-    for(fd = 0; fd < NOFILE; fd++)
-      curproc->ofile[fd] = 0;
+  } else {
+    for (fd = 0; fd < NOFILE; fd++) curproc->ofile[fd] = 0;
     curproc->cwd = 0;
   }
 
@@ -298,17 +276,18 @@ exit(void)
   wakeup1(curproc->parent);
 
   // Pass abandoned children to init.
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->parent == curproc){
+  for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+    if (p->parent == curproc) {
       p->parent = initproc;
-      if(p->state == ZOMBIE)
+      if (p->state == ZOMBIE)
         wakeup1(initproc);
     }
-    // 스레드 모두 ZOMBIE로 변경
-    if(p->pid == curproc->pid){
-      p->state = ZOMBIE;
+    // 스레드 모두 kill
+    if (p->pid == curproc->pid && p->tid > 0) {
+      p->killed = 1;
     }
   }
+  curproc->state = ZOMBIE;
 
   // Jump into the scheduler, never to return.
   sched();
@@ -317,52 +296,48 @@ exit(void)
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
-int
-wait(void)
-{
+int wait(void) {
   struct proc *p;
   int havekids, pid = -1;
   struct proc *curproc = myproc();
-  
+
   acquire(&ptable.lock);
-  for(;;){
+  for (;;) {
     // Scan through table looking for exited children.
     havekids = 0;
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->parent != curproc)
-        continue;
+    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+      if (p->parent != curproc) continue;
       havekids = 1;
-      if(p->state == ZOMBIE){
+      if (p->state == ZOMBIE) {
         // Found one.
         pid = p->pid;
         kfree(p->kstack);
         p->kstack = 0;
-        if(p->mainthread == 0)
+        if (p->mainthread == 0)
           freevm(p->pgdir);
         p->pid = 0;
         p->parent = 0;
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
-        // p의 memlimit, stacksize, mainthread, tid 0으로 초기화
+        // p의 memlimit, stacksize, mainthread, tid, retval 0으로 초기화
         p->memlimit = 0;
         p->stacksize = 0;
         p->mainthread = 0;
         p->tid = 0;
+        p->retval = 0;
+        release(&ptable.lock);
+        return pid;
       }
     }
-    if(pid != -1){
-      release(&ptable.lock);
-      return pid;
-    }
     // No point waiting if we don't have any children.
-    if(!havekids || curproc->killed){
+    if (!havekids || curproc->killed) {
       release(&ptable.lock);
       return -1;
     }
 
     // Wait for children to exit.  (See wakeup1 call in proc_exit.)
-    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
+    sleep(curproc, &ptable.lock);  // DOC: wait-sleep
   }
 }
 
@@ -380,7 +355,7 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-  cprintf("ck3");
+  
   for(;;){
     // Enable interrupts on this processor.
     sti();

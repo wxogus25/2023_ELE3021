@@ -24,7 +24,6 @@ exec(char *path, char **argv)
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
   struct proc *curproc = myproc();
-  struct proc *p;
 
   begin_op();
 
@@ -101,8 +100,8 @@ exec(char *path, char **argv)
   safestrcpy(curproc->name, last, sizeof(curproc->name));
 
   acquire(&ptable.lock);
-  for(p = ptable.proc; p<&ptable.proc[NPROC];p++){
-    if(p->pid == curproc->pid && p != curproc){
+  for(struct proc *p = ptable.proc; p<&ptable.proc[NPROC];p++){
+    if(p->pid == curproc->pid && p != curproc && p->tid > 0){
       p->state = ZOMBIE;
       if (p->mainthread == 0) {
         for (int fd = 0; fd < NOFILE; fd++) {
@@ -113,12 +112,12 @@ exec(char *path, char **argv)
     }
   }
   release(&ptable.lock);
-
+  int check = 0;
+  if (curproc->mainthread == 0) {
+    check = 1;
+  }
   // Commit to the user image.
   oldpgdir = curproc->pgdir;
-  if(curproc->mainthread == 0){
-    freevm(oldpgdir);
-  }
   curproc->pgdir = pgdir;
   curproc->sz = sz;
   curproc->tf->eip = elf.entry;  // main
@@ -127,6 +126,9 @@ exec(char *path, char **argv)
   curproc->mainthread = 0;
   curproc->retval = 0;
   switchuvm(curproc);
+  if(check)
+    freevm(oldpgdir);
+  
   return 0;
 
  bad:
