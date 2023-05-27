@@ -120,6 +120,8 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
+struct proc*    allocproc(void);
+void            wakeup1(void *chan);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
@@ -191,3 +193,13 @@ void            clearpteu(pde_t *pgdir, char *uva);
 
 // prac_syscall.c
 int             myfunction(char*);
+
+// project2_threadfunc.c
+int thread_create(thread_t* thread, void* (*start_rootine)(void*), void* arg);
+void thread_exit(void* retval);
+int thread_join(thread_t thread, void** retval);
+
+// project2_sysfunc.c
+int exec2(char* path, char** argv, int stacksize);
+int setmemorylimit(int pid, int limit);
+int pslist(void);

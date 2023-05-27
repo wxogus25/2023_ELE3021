@@ -8,6 +8,11 @@
 #include "elf.h"
 #include "spinlock.h"
 
+extern struct {
+    struct spinlock lock;
+    struct proc proc[NPROC];
+} ptable;
+
 // exec2 system call
 // stacksize는 1 이상 100 이하
 // 실패하면 return -1
@@ -23,6 +28,7 @@ int exec2(char *path, char **argv, int stacksize){
     struct proghdr ph;
     pde_t *pgdir, *oldpgdir;
     struct proc *curproc = myproc();
+    struct proc *p;
 
     begin_op();
 
@@ -89,14 +95,33 @@ int exec2(char *path, char **argv, int stacksize){
         if (*s == '/') last = s + 1;
     safestrcpy(curproc->name, last, sizeof(curproc->name));
 
+    acquire(&ptable.lock);
+    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+        if (p->pid == curproc->pid && p != curproc) {
+            p->state = ZOMBIE;
+            if (p->mainthread == 0) {
+                for (int fd = 0; fd < NOFILE; fd++) {
+                    p->ofile[fd] = 0;
+                }
+                p->cwd = 0;
+            }
+        }
+    }
+    release(&ptable.lock);
+
     // Commit to the user image.
     oldpgdir = curproc->pgdir;
+    if (curproc->mainthread == 0) {
+        freevm(oldpgdir);
+    }
     curproc->pgdir = pgdir;
     curproc->sz = sz;
     curproc->tf->eip = elf.entry;  // main
     curproc->tf->esp = sp;
+    curproc->tid = 0;
+    curproc->mainthread = 0;
+    curproc->retval = 0;
     switchuvm(curproc);
-    freevm(oldpgdir);
     return 0;
 
 bad:
@@ -113,10 +138,10 @@ bad:
 int sys_exec2(void) {
     char *path, *argv[MAXARG];
     int i;
-    int *stacksize;
+    int stacksize;
     uint uargv, uarg;
 
-    if (argstr(0, &path) < 0 || argint(1, (int *)&uargv) < 0 || argint(2, stacksize) < 0) {
+    if (argstr(0, &path) < 0 || argint(1, (int *)&uargv) < 0 || argint(2, (int*)&stacksize) < 0) {
         return -1;
     }
     memset(argv, 0, sizeof(argv));
@@ -129,13 +154,8 @@ int sys_exec2(void) {
         }
         if (fetchstr(uarg, &argv[i]) < 0) return -1;
     }
-    return exec2(path, argv, &stacksize);
+    return exec2(path, argv, stacksize);
 }
-
-extern struct {
-    struct spinlock lock;
-    struct proc proc[NPROC];
-} ptable;
 
 // 해당 pid를 가진 프로세스의 memory limit을 limit으로 변경
 int setmemorylimit(int pid, int limit){
@@ -149,11 +169,10 @@ int setmemorylimit(int pid, int limit){
     for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
         // pid가 0이 아니라면 존재하는 프로세스이므로 변경
         // zombie이거나 kill 됐어도 아직 free 안됐으면 변경함
-        if (p->pid == pid){
+        if (p->pid == pid && p->mainthread == 0){
             // limit이 0 보다 크면 sz와 비교
             if(limit > 0){
-                // pid가 같은 프로세스(스레드)들은 모두 sz가 같음
-                // 변경 가능하면 변경하고 flag 0으로 변경
+                // mainthread의 sz만 의미가 있으므로 비교
                 if(limit >= p->sz){
                     flag = 0;
                     p->memlimit = limit;
@@ -174,12 +193,12 @@ int setmemorylimit(int pid, int limit){
 
 // setmemorylimit wrapper function
 int sys_setmemorylimit(void){
-    int *pid, *limit;
+    int pid, limit;
 
-    if (argint(0, pid) < 0 || argint(1, limit) < 0)
+    if (argint(0, (int*)&pid) < 0 || argint(1, (int*)&limit) < 0)
         return -1;
 
-    return setmemorylimit(&pid, &limit);
+    return setmemorylimit(pid, limit);
 }
 
 // 현재 state가 RUNNABLE, RUNNING, SLEEPING인 프로세스들의 정보 출력
@@ -189,9 +208,11 @@ int pslist(void){
     int flag = 1;
     for (p = ptable.proc; p < &ptable.proc[NPROC]; p++){
         if(p->state == RUNNABLE || p->state == RUNNING || p->state == SLEEPING){
-            // sz는 uint지만 int 범위 내에서 양수로 존재한다고 가정하고 출력
-            cprintf("%s %d %d %d %d\n", p->name, p->pid, p->stacksize, p->sz, p->memlimit);
-            flag = 0;
+            if(p->mainthread == 0){
+                // sz는 uint지만 int 범위 내에서 양수로 존재한다고 가정하고 출력
+                cprintf("%s %d %d %d %d\n", p->name, p->pid, p->stacksize, p->sz, p->memlimit);
+                flag = 0;
+            }
         }
     }
     // 아무것도 출력 안하면 return -1, 아니면 return 0

@@ -6,6 +6,12 @@
 #include "defs.h"
 #include "x86.h"
 #include "elf.h"
+#include "spinlock.h"
+
+extern struct {
+    struct spinlock lock;
+    struct proc proc[NPROC];
+} ptable;
 
 int
 exec(char *path, char **argv)
@@ -18,6 +24,7 @@ exec(char *path, char **argv)
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
   struct proc *curproc = myproc();
+  struct proc *p;
 
   begin_op();
 
@@ -93,14 +100,33 @@ exec(char *path, char **argv)
       last = s+1;
   safestrcpy(curproc->name, last, sizeof(curproc->name));
 
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p<&ptable.proc[NPROC];p++){
+    if(p->pid == curproc->pid && p != curproc){
+      p->state = ZOMBIE;
+      if (p->mainthread == 0) {
+        for (int fd = 0; fd < NOFILE; fd++) {
+          p->ofile[fd] = 0;
+        }
+        p->cwd = 0;
+      }
+    }
+  }
+  release(&ptable.lock);
+
   // Commit to the user image.
   oldpgdir = curproc->pgdir;
+  if(curproc->mainthread == 0){
+    freevm(oldpgdir);
+  }
   curproc->pgdir = pgdir;
   curproc->sz = sz;
   curproc->tf->eip = elf.entry;  // main
   curproc->tf->esp = sp;
+  curproc->tid = 0;
+  curproc->mainthread = 0;
+  curproc->retval = 0;
   switchuvm(curproc);
-  freevm(oldpgdir);
   return 0;
 
  bad:

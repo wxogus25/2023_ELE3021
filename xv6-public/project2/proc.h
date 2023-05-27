@@ -49,8 +49,12 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
   int memlimit;                // memory limit(byte), 기본값 0, 0이면 제한 없음
   int stacksize;               // 스택용 페이지 개수
+  thread_t tid;                     // 스레드 id, matinthread가 0일때 tid는 스레드 개수
+  struct proc *mainthread;     // 0이면 메인, 0이 아니면 스레드
+  void* retval;                // 스레드 return value
 };
 
 // Process memory is laid out contiguously, low addresses first:

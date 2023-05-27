@@ -21,3 +21,9 @@
 #define SYS_mkdir  20
 #define SYS_close  21
 #define SYS_myfunction 22
+#define SYS_thread_create 23
+#define SYS_thread_exit 24
+#define SYS_thread_join 25
+#define SYS_exec2 26
+#define SYS_setmemorylimit 27
+#define SYS_pslist 28

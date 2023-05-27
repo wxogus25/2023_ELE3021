@@ -12,13 +12,13 @@ struct {
   struct proc proc[NPROC];
 } ptable;
 
-static struct proc *initproc;
+struct proc *initproc;
 
 int nextpid = 1;
 extern void forkret(void);
 extern void trapret(void);
 
-static void wakeup1(void *chan);
+void wakeup1(void *chan);
 
 void
 pinit(void)
@@ -70,7 +70,7 @@ myproc(void) {
 // If found, change state to EMBRYO and initialize
 // state required to run in the kernel.
 // Otherwise return 0.
-static struct proc*
+struct proc*
 allocproc(void)
 {
   struct proc *p;
@@ -88,9 +88,12 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
-  // p의 memlimit, stacksize 0으로 설정
+  // p의 memlimit, stacksize, tid, mainthread, retval 초기화
   p->memlimit = 0;
-  p->stacksize = 0;
+  p->stacksize = 1;
+  p->tid = 0;
+  p->mainthread = 0;
+  p->retval = 0;
 
   release(&ptable.lock);
 
@@ -127,6 +130,8 @@ userinit(void)
   extern char _binary_initcode_start[], _binary_initcode_size[];
 
   p = allocproc();
+
+  cprintf("suc");
   
   initproc = p;
   if((p->pgdir = setupkvm()) == 0)
@@ -162,9 +167,25 @@ int
 growproc(int n)
 {
   uint sz;
+  int memlimit;
   struct proc *curproc = myproc();
 
-  sz = curproc->sz;
+  acquire(&ptable.lock);
+
+  if(curproc->mainthread == 0){
+    sz = curproc->sz;
+    memlimit = curproc->memlimit;
+  }
+  else{
+    sz = curproc->mainthread->sz;
+    memlimit = curproc->mainthread->memlimit;
+  }
+
+  if (PGROUNDUP(sz + n) > memlimit) {
+    release(&ptable.lock);
+    return -1;
+  }
+
   if(n > 0){
     if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
@@ -172,7 +193,13 @@ growproc(int n)
     if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
   }
-  curproc->sz = sz;
+  if (curproc->mainthread == 0)
+    curproc->sz = sz;
+  else
+    curproc->mainthread->sz = sz;
+
+  release(&ptable.lock);
+
   switchuvm(curproc);
   return 0;
 }
@@ -202,6 +229,14 @@ fork(void)
   np->sz = curproc->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
+  struct proc *main;
+  if(curproc->mainthread == 0){
+    main = curproc;
+  }else{
+    main = curproc->mainthread;
+  }
+  np->memlimit = main->memlimit;
+  np->stacksize = main->stacksize;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -237,18 +272,25 @@ exit(void)
   if(curproc == initproc)
     panic("init exiting");
 
-  // Close all open files.
-  for(fd = 0; fd < NOFILE; fd++){
-    if(curproc->ofile[fd]){
-      fileclose(curproc->ofile[fd]);
-      curproc->ofile[fd] = 0;
+  // 모든 스레드는 메인 스레드의 ofile, cwd 공유
+  if(curproc->mainthread == 0){
+    for(fd = 0; fd < NOFILE; fd++){
+      if(curproc->ofile[fd]){
+        fileclose(curproc->ofile[fd]);
+        curproc->ofile[fd] = 0;
+      }
     }
+    if(curproc->cwd != 0){
+      begin_op();
+      iput(curproc->cwd);
+      end_op();
+      curproc->cwd = 0;
+    }
+  }else{
+    for(fd = 0; fd < NOFILE; fd++)
+      curproc->ofile[fd] = 0;
+    curproc->cwd = 0;
   }
-
-  begin_op();
-  iput(curproc->cwd);
-  end_op();
-  curproc->cwd = 0;
 
   acquire(&ptable.lock);
 
@@ -262,10 +304,13 @@ exit(void)
       if(p->state == ZOMBIE)
         wakeup1(initproc);
     }
+    // 스레드 모두 ZOMBIE로 변경
+    if(p->pid == curproc->pid){
+      p->state = ZOMBIE;
+    }
   }
 
   // Jump into the scheduler, never to return.
-  curproc->state = ZOMBIE;
   sched();
   panic("zombie exit");
 }
@@ -276,7 +321,7 @@ int
 wait(void)
 {
   struct proc *p;
-  int havekids, pid;
+  int havekids, pid = -1;
   struct proc *curproc = myproc();
   
   acquire(&ptable.lock);
@@ -292,20 +337,24 @@ wait(void)
         pid = p->pid;
         kfree(p->kstack);
         p->kstack = 0;
-        freevm(p->pgdir);
+        if(p->mainthread == 0)
+          freevm(p->pgdir);
         p->pid = 0;
         p->parent = 0;
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
-        // p의 memlimit, stacksize 0으로 초기화
+        // p의 memlimit, stacksize, mainthread, tid 0으로 초기화
         p->memlimit = 0;
         p->stacksize = 0;
-        release(&ptable.lock);
-        return pid;
+        p->mainthread = 0;
+        p->tid = 0;
       }
     }
-
+    if(pid != -1){
+      release(&ptable.lock);
+      return pid;
+    }
     // No point waiting if we don't have any children.
     if(!havekids || curproc->killed){
       release(&ptable.lock);
@@ -331,7 +380,7 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
+  cprintf("ck3");
   for(;;){
     // Enable interrupts on this processor.
     sti();
@@ -460,7 +509,7 @@ sleep(void *chan, struct spinlock *lk)
 //PAGEBREAK!
 // Wake up all processes sleeping on chan.
 // The ptable lock must be held.
-static void
+void
 wakeup1(void *chan)
 {
   struct proc *p;
@@ -486,6 +535,7 @@ int
 kill(int pid)
 {
   struct proc *p;
+  int check = 0;
 
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -494,11 +544,11 @@ kill(int pid)
       // Wake process from sleep if necessary.
       if(p->state == SLEEPING)
         p->state = RUNNABLE;
-      release(&ptable.lock);
-      return 0;
+      check = 1;
     }
   }
   release(&ptable.lock);
+  if(check) return 0;
   return -1;
 }
 
