@@ -19,7 +19,6 @@ extern void forkret(void);
 extern void trapret(void);
 
 void wakeup1(void *chan);
-
 void
 pinit(void)
 {
@@ -87,7 +86,6 @@ found:
   p->tid = 0;
   p->mainthread = 0;
   p->retval = 0;
-  p->pgcnt = 0;
 
   release(&ptable.lock);
 
@@ -157,45 +155,33 @@ userinit(void)
 // Return 0 on success, -1 on failure.
 int growproc(int n) {
   uint sz;
-  int i;
+  int memlimit;
   struct proc *curproc = myproc();
-  struct proc *main;
 
   acquire(&ptable.lock);
 
-  if (curproc->mainthread != 0)
-    main = curproc->mainthread;
-  else
-    main = curproc;
+  if (curproc->mainthread == 0) {
+    sz = curproc->sz;
+    memlimit = curproc->memlimit;
+  } else {
+    sz = curproc->mainthread->sz;
+    memlimit = curproc->mainthread->memlimit;
+  }
 
-  sz = main->sz - main->pgcnt * PGSIZE;
-
-  if (main->memlimit != 0 && PGROUNDUP(main->sz + n) > main->memlimit) {
+  if (memlimit != 0 && PGROUNDUP(sz + n) > memlimit) {
     release(&ptable.lock);
     return -1;
   }
 
-  for(i=0;i<MAXTHREAD;i++){
-    if(main->tstack[i] == 0){
-      if((allocuvm(curproc->pgdir, sz + i * PGSIZE, sz + (i + 1) * PGSIZE)) == 0)
-        return -1;
-      main->pgcnt += 1;
-      main->tstack[i] = 1;
-      main->sz += PGSIZE;
-      n -= PGSIZE;
-      if(n <= 0){
-        break;
-      }
-    }
+  if (n > 0) {
+    if ((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0) return -1;
+  } else if (n < 0) {
+    if ((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0) return -1;
   }
-
-  curproc->sz = main->sz;
-
-  // if (n > 0) {
-  //   if ((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0) return -1;
-  // } else if (n < 0) {
-  //   if ((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0) return -1;
-  // }
+  if (curproc->mainthread == 0)
+    curproc->sz = sz;
+  else
+    curproc->mainthread->sz = sz;
 
   release(&ptable.lock);
 
@@ -210,13 +196,11 @@ int fork(void) {
   int i, pid;
   struct proc *np;
   struct proc *curproc = myproc();
+
   // Allocate process.
   if ((np = allocproc()) == 0) {
     return -1;
   }
-
-  if(curproc->mainthread != 0)
-    curproc = curproc->mainthread;
 
   // Copy process state from proc.
   if ((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0) {
@@ -228,23 +212,20 @@ int fork(void) {
   np->sz = curproc->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
-  for(i=0;i<MAXTHREAD;i++){
-    np->tstack[i] = curproc->tstack[i];
+  struct proc *main;
+  if (curproc->mainthread == 0) {
+    main = curproc;
+  } else {
+    main = curproc->mainthread;
   }
-  
-  np->memlimit = curproc->memlimit;
-  np->stacksize = curproc->stacksize;
-  np->mainthread = 0;
-  np->tid = 0;
-  np->retval = 0;
-  np->pgcnt = curproc->pgcnt;
+  np->memlimit = main->memlimit;
+  np->stacksize = main->stacksize;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
 
   for (i = 0; i < NOFILE; i++)
-    if (curproc->ofile[i])
-      np->ofile[i] = filedup(curproc->ofile[i]);
+    if (curproc->ofile[i]) np->ofile[i] = filedup(curproc->ofile[i]);
   np->cwd = idup(curproc->cwd);
 
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
@@ -270,16 +251,22 @@ void exit(void) {
 
   if (curproc == initproc) panic("init exiting");
 
-  for (fd = 0; fd < NOFILE; fd++) {
-    if (curproc->ofile[fd]) {
-      fileclose(curproc->ofile[fd]);
-      curproc->ofile[fd] = 0;
+  // 모든 스레드는 메인 스레드의 ofile, cwd 공유
+  if (curproc->mainthread == 0) {
+    for (fd = 0; fd < NOFILE; fd++) {
+      if (curproc->ofile[fd]) {
+        fileclose(curproc->ofile[fd]);
+        curproc->ofile[fd] = 0;
+      }
     }
-  }
-  if (curproc->cwd != 0) {
-    begin_op();
-    iput(curproc->cwd);
-    end_op();
+    if (curproc->cwd != 0) {
+      begin_op();
+      iput(curproc->cwd);
+      end_op();
+      curproc->cwd = 0;
+    }
+  } else {
+    for (fd = 0; fd < NOFILE; fd++) curproc->ofile[fd] = 0;
     curproc->cwd = 0;
   }
 
@@ -296,7 +283,7 @@ void exit(void) {
         wakeup1(initproc);
     }
     // 스레드 모두 kill
-    if (p->pid == curproc->pid && p != curproc && p->state != ZOMBIE) {
+    if (p->pid == curproc->pid && p->tid > 0) {
       p->killed = 1;
     }
   }
@@ -311,7 +298,7 @@ void exit(void) {
 // Return -1 if this process has no children.
 int wait(void) {
   struct proc *p;
-  int havekids, pid;
+  int havekids, pid = -1;
   struct proc *curproc = myproc();
 
   acquire(&ptable.lock);
@@ -326,12 +313,8 @@ int wait(void) {
         pid = p->pid;
         kfree(p->kstack);
         p->kstack = 0;
-        if (p->mainthread == 0){
+        if (p->mainthread == 0)
           freevm(p->pgdir);
-          for(int i=0;i<MAXTHREAD;i++){
-            p->tstack[i] = 0;
-          }
-        }
         p->pid = 0;
         p->parent = 0;
         p->name[0] = 0;
@@ -343,7 +326,6 @@ int wait(void) {
         p->mainthread = 0;
         p->tid = 0;
         p->retval = 0;
-        p->pgcnt = 0;
         release(&ptable.lock);
         return pid;
       }
