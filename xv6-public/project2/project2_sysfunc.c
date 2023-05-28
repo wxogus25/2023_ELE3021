@@ -27,7 +27,7 @@ int exec2(char *path, char **argv, int stacksize){
     struct inode *ip;
     struct proghdr ph;
     pde_t *pgdir, *oldpgdir;
-    struct proc *curproc = myproc();
+    struct proc *curproc = myproc(), *main;
     struct proc *p;
 
     begin_op();
@@ -66,8 +66,13 @@ int exec2(char *path, char **argv, int stacksize){
     // Make the first inaccessible.  Use the second as the user stack.
     sz = PGROUNDUP(sz);
 
+    if(curproc->mainthread == 0)
+        main = curproc;
+    else
+        main = curproc->mainthread;
+
     // sz + (1 + stacksize) * PGSIZE가 memory limit를 넘는지 확인하고, 넘으면 bad로 이동
-    if (curproc->sz != 0 && sz + (1 + stacksize) * PGSIZE > curproc->sz) goto bad;
+    if (main->memlimit != 0 && sz + (1 + stacksize) * PGSIZE > main->memlimit) goto bad;
     // 넘지 않으면 메모리 할당
     if ((sz = allocuvm(pgdir, sz, sz + (1 + stacksize) * PGSIZE)) == 0) goto bad;
     clearpteu(pgdir, (char *)(sz - (1 + stacksize) * PGSIZE));
@@ -97,23 +102,23 @@ int exec2(char *path, char **argv, int stacksize){
 
     acquire(&ptable.lock);
     for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
-        if (p->pid == curproc->pid && p != curproc) {
-            p->state = ZOMBIE;
-            if (p->mainthread == 0) {
-                for (int fd = 0; fd < NOFILE; fd++) {
-                    p->ofile[fd] = 0;
-                }
-                p->cwd = 0;
-            }
+        if (p->pid == curproc->pid && p != curproc && p->state != ZOMBIE) {
+            p->killed = 1;
         }
     }
     release(&ptable.lock);
 
+    int check = 0;
+    if (curproc->mainthread == 0) {
+        check = 1;
+        for (int i = 0; i < MAXTHREAD; i++) {
+            curproc->tstack[i] = 0;
+        }
+    }
+
     // Commit to the user image.
     oldpgdir = curproc->pgdir;
-    if (curproc->mainthread == 0) {
-        freevm(oldpgdir);
-    }
+    curproc->memlimit = main->memlimit;
     curproc->pgdir = pgdir;
     curproc->sz = sz;
     curproc->tf->eip = elf.entry;  // main
@@ -121,12 +126,16 @@ int exec2(char *path, char **argv, int stacksize){
     curproc->tid = 0;
     curproc->mainthread = 0;
     curproc->retval = 0;
+    curproc->pgcnt = 0;
     switchuvm(curproc);
+    if (check)
+        freevm(oldpgdir);
+
     return 0;
 
 bad:
-    // pgdir free하면서 page table에 연결된 메모리도 같이 할당 해제함
-    if (pgdir) freevm(pgdir);
+    if (pgdir)
+        freevm(pgdir);
     if (ip) {
         iunlockput(ip);
         end_op();

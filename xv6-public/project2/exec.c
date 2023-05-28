@@ -23,7 +23,7 @@ exec(char *path, char **argv)
   struct inode *ip;
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
-  struct proc *curproc = myproc();
+  struct proc *curproc = myproc(), *main;
 
   begin_op();
 
@@ -69,6 +69,15 @@ exec(char *path, char **argv)
   // Allocate two pages at the next page boundary.
   // Make the first inaccessible.  Use the second as the user stack.
   sz = PGROUNDUP(sz);
+
+  if (curproc->mainthread == 0)
+    main = curproc;
+  else
+    main = curproc->mainthread;
+
+  if (main->memlimit != 0 && sz + 2 * PGSIZE > main->memlimit)
+    goto bad;
+
   if((sz = allocuvm(pgdir, sz, sz + 2*PGSIZE)) == 0)
     goto bad;
   clearpteu(pgdir, (char*)(sz - 2*PGSIZE));
@@ -112,7 +121,8 @@ exec(char *path, char **argv)
     for (int i = 0; i < MAXTHREAD; i++) {
       curproc->tstack[i] = 0;
     }
-  }
+  }else
+    curproc->memlimit = curproc->mainthread->memlimit;
   // Commit to the user image.
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;

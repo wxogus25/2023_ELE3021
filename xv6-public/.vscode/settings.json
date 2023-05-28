@@ -14,6 +14,7 @@
         "param.h": "c",
         "stat.h": "c",
         "elf.h": "c",
-        "project2_thread.h": "c"
+        "project2_thread.h": "c",
+        "typeinfo": "c"
     }
 }

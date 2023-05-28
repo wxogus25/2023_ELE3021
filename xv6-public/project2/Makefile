@@ -192,6 +192,7 @@ UPROGS=\
 	_thread_exit\
 	_thread_kill\
 	_thread_test\
+	_pmanager\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
@@ -261,7 +262,7 @@ qemu-nox-gdb: fs.img xv6.img .gdbinit
 EXTRA=\
 	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
 	ln.c ls.c mkdir.c rm.c stressfs.c wc.c zombie.c\
-	printf.c umalloc.c _prac_myuserapp _ftest _hello_thread _thread_exec _thread_exit _thread_kill _thread_test\
+	printf.c umalloc.c _prac_myuserapp _ftest _hello_thread _thread_exec _thread_exit _thread_kill _thread_test _pmanager\
 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
 	.gdbinit.tmpl gdbutil\
 

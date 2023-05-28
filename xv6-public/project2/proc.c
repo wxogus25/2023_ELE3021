@@ -155,6 +155,7 @@ userinit(void)
 
 // Grow current process's memory by n bytes.
 // Return 0 on success, -1 on failure.
+// 연속 할당으로 바꾸기
 int growproc(int n) {
   uint sz;
   int i;
@@ -268,7 +269,7 @@ int fork(void) {
 // until its parent calls wait() to find out it exited.
 void exit(void) {
   struct proc *curproc = myproc();
-  struct proc *p;
+  struct proc *p, *main;
   int fd;
 
   if (curproc == initproc) panic("init exiting");
@@ -289,7 +290,14 @@ void exit(void) {
   acquire(&ptable.lock);
 
   // Parent might be sleeping in wait().
-  wakeup1(curproc->parent);
+  if(curproc->mainthread == 0)
+    main = curproc;
+  else
+    main = curproc->mainthread;
+
+  if(main->tid == 0)
+    wakeup1(main->parent);
+  main->tid -= 1;
 
   // Pass abandoned children to init.
   for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
@@ -298,7 +306,7 @@ void exit(void) {
       if (p->state == ZOMBIE)
         wakeup1(initproc);
     }
-    // 스레드 모두 kill
+    // 스레드 모두 kill (exit 호출 유도)
     if (p->pid == curproc->pid && p != curproc && p->state != ZOMBIE) {
       p->killed = 1;
     }
@@ -314,7 +322,7 @@ void exit(void) {
 // Return -1 if this process has no children.
 int wait(void) {
   struct proc *p;
-  int havekids, pid;
+  int havekids, pid = -1;
   struct proc *curproc = myproc();
 
   acquire(&ptable.lock);
@@ -347,9 +355,11 @@ int wait(void) {
         p->tid = 0;
         p->retval = 0;
         p->pgcnt = 0;
-        release(&ptable.lock);
-        return pid;
       }
+    }
+    if (pid != -1){
+      release(&ptable.lock);
+      return pid;
     }
     // No point waiting if we don't have any children.
     if (!havekids || curproc->killed) {

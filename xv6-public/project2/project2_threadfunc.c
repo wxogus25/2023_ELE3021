@@ -66,6 +66,7 @@ int thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
     np->tid = *thread;
     np->parent = curproc->parent;
     np->pid = curproc->pid;
+    np->memlimit = curproc->memlimit;
     sz = curproc->sz - curproc->pgcnt * PGSIZE;
 
     if((np->sz = allocuvm(np->pgdir, sz + (idx - 1) * PGSIZE, sz + idx * PGSIZE)) == 0){
