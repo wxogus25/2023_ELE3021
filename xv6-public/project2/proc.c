@@ -211,7 +211,6 @@ growproc(int n) {
       }
     }
   }
-  cprintf("growproc : %d, sz : %d\n", cnt, main->sz);
 
   // 증가시킨 크기를 다른 스레드에도 반영시켜줌
   for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
@@ -411,10 +410,6 @@ wait(void) {
     }
     // No point waiting if we don't have any children.
     if (!havekids || curproc->killed) {
-      if(curproc->killed)
-        cprintf("killed\n");
-      if(!havekids)
-        cprintf("missing child\n");
       release(&ptable.lock);
       return -1;
     }

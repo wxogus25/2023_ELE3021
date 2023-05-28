@@ -235,7 +235,6 @@ thread_join(thread_t thread, void **retval){
     }
 
     if(curproc->killed){
-      cprintf("join killed\n");
       release(&ptable.lock);
       return -1;
     }
