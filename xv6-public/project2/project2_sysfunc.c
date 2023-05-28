@@ -16,7 +16,8 @@ extern struct {
 // exec2 system call
 // stacksize는 1 이상 100 이하
 // 실패하면 return -1
-int exec2(char *path, char **argv, int stacksize){
+int
+exec2(char *path, char **argv, int stacksize){
   if(stacksize < 1 || stacksize > 100){
     return -1;
   }
@@ -118,6 +119,7 @@ int exec2(char *path, char **argv, int stacksize){
     }
     for (int i = 0; i < MAXTHREAD; i++){
       curproc->thd[i] = 0;
+      curproc->thdnum[i] = 0;
     }
   }
 
@@ -129,6 +131,7 @@ int exec2(char *path, char **argv, int stacksize){
   curproc->tf->eip = elf.entry;  // main
   curproc->tf->esp = sp;
   curproc->tid = 0;
+  curproc->tcnt = 0;
   curproc->mainthread = 0;
   curproc->retval = 0;
   curproc->base = sz;
@@ -149,7 +152,8 @@ bad:
 }
 
 // exec2 wrapper function
-int sys_exec2(void) {
+int
+sys_exec2(void) {
   char *path, *argv[MAXARG];
   int i;
   int stacksize;
@@ -172,7 +176,8 @@ int sys_exec2(void) {
 }
 
 // 해당 pid를 가진 프로세스의 memory limit을 limit으로 변경
-int setmemorylimit(int pid, int limit){
+int
+setmemorylimit(int pid, int limit){
   struct proc *p;
   // 해당하는 pid를 가진 프로세스를 찾고 변경했는지 확인하는 용도
   int flag = 1;
@@ -206,7 +211,8 @@ int setmemorylimit(int pid, int limit){
 }
 
 // setmemorylimit wrapper function
-int sys_setmemorylimit(void){
+int
+sys_setmemorylimit(void){
   int pid, limit;
 
   if (argint(0, (int*)&pid) < 0 || argint(1, (int*)&limit) < 0)
@@ -217,7 +223,8 @@ int sys_setmemorylimit(void){
 
 // 현재 state가 RUNNABLE, RUNNING, SLEEPING인 프로세스들의 정보 출력
 // [프로세스 이름, pid, 스텍용 페이지 개수, 할당받은 메모리 크기, 메모리 최대 제한] 순서대로 출력
-int pslist(void){
+int
+pslist(void){
   struct proc *p;
   int flag = 1;
   for (p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -234,6 +241,7 @@ int pslist(void){
 }
 
 // pslist wrapper function
-int sys_pslist(void){
+int
+sys_pslist(void){
   return pslist();
 }

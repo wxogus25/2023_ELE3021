@@ -73,7 +73,8 @@ myproc(void) {
 // If found, change state to EMBRYO and initialize
 // state required to run in the kernel.
 // Otherwise return 0.
-struct proc *allocproc(void) {
+struct proc*
+allocproc(void) {
   struct proc *p;
   char *sp;
 
@@ -92,12 +93,15 @@ found:
   p->memlimit = 0;
   p->stacksize = 1;
   p->tid = 0;
+  p->tcnt = 0;
   p->mainthread = 0;
   p->retval = 0;
   p->base = 0;
   p->sz = 0;
-  for(int i=0;i<MAXTHREAD;i++)
+  for(int i=0;i<MAXTHREAD;i++){
     p->thd[i] = 0;
+    p->thdnum[i] = 0;
+  }
   for(int i=0;i<MAXPAGE;i++)
     p->tstack[i] = 0;
 
@@ -168,7 +172,8 @@ userinit(void)
 
 // Grow current process's memory by n bytes.
 // Return 0 on success, -1 on failure.
-int growproc(int n) {
+int
+growproc(int n) {
   int i, cnt = 0;
   struct proc *curproc = myproc();
   struct proc *main;
@@ -223,7 +228,8 @@ int growproc(int n) {
 // Create a new process copying p as the parent.
 // Sets up stack to return as if from system call.
 // Caller must set state of returned proc to RUNNABLE.
-int fork(void) {
+int
+fork(void) {
   int i, pid;
   struct proc *np;
   struct proc *curproc = myproc();
@@ -257,12 +263,14 @@ int fork(void) {
   // 새로운 스레드 사용 가능하도록 초기화
   for (i = 0; i< MAXTHREAD; i++){
     np->thd[i] = 0;
+    np->thdnum[i] = 0;
   }
 
   np->memlimit = main->memlimit;
   np->stacksize = main->stacksize;
   np->mainthread = 0;
   np->tid = 0;
+  np->tcnt = 0;
   np->retval = 0;
   np->base = main->sz;
 
@@ -289,7 +297,8 @@ int fork(void) {
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait() to find out it exited.
-void exit(void) {
+void
+exit(void) {
   struct proc *curproc = myproc();
   struct proc *p, *main;
   int fd;
@@ -319,10 +328,12 @@ void exit(void) {
 
   // Parent might be sleeping in wait().
   // 다른 스레드가 아직 종료되지 않았으면 parent를 깨우지 않음
-  if(main->tid == 0)
+
+  // 수정
+  if(main->tcnt == 0)
     wakeup1(main->parent);
   else
-    main->tid -= 1;
+    main->tcnt -= 1;
 
   // Pass abandoned children to init.
   // 자식 프로세스 init에 이양
@@ -347,7 +358,8 @@ void exit(void) {
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
-int wait(void) {
+int
+wait(void) {
   struct proc *p;
   int havekids, pid = -1;
   struct proc *curproc = myproc();
@@ -357,6 +369,7 @@ int wait(void) {
     // Scan through table looking for exited children.
     havekids = 0;
     pid = -1;
+    // p가 부모인 놈이 있으면?
     for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
       if (p->parent != curproc) continue;
       havekids = 1;
@@ -372,6 +385,7 @@ int wait(void) {
             p->tstack[i] = 0;
           }
           for (int i = 0; i < MAXTHREAD; i++){
+            p->thdnum[i] = 0;
             p->thd[i] = 0;
           }
         }
@@ -385,6 +399,7 @@ int wait(void) {
         p->stacksize = 0;
         p->mainthread = 0;
         p->tid = 0;
+        p->tcnt = 0;
         p->retval = 0;
         p->base = 0;
         p->sz = 0;

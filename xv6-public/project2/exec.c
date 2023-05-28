@@ -127,6 +127,7 @@ exec(char *path, char **argv)
     }
     for (int i = 0; i < MAXTHREAD; i++){
       curproc->thd[i] = 0;
+      curproc->thdnum[i] = 0;
     }
   }
   curproc->memlimit = main->memlimit;
@@ -137,6 +138,7 @@ exec(char *path, char **argv)
   curproc->tf->eip = elf.entry;  // main
   curproc->tf->esp = sp;
   curproc->tid = 0;
+  curproc->tcnt = 0;
   curproc->mainthread = 0;
   curproc->retval = 0;
   curproc->base = sz;

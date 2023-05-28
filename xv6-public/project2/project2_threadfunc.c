@@ -16,7 +16,8 @@ extern struct {
 extern struct proc *initproc;
 
 // fork와 비슷한 방식으로 동작
-int thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
+int
+thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
   int i, idx = -1, pass = 0, cnt = 0;
   struct proc *np;
   struct proc *curproc = myproc();
@@ -34,8 +35,18 @@ int thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
     curproc = curproc->mainthread;
   }
 
-  // main thread의 tid는 스레드의 개수를 나타냄
-  np->tid = curproc->tid;
+  if(curproc->tcnt == 0){
+    curproc->thdnum[0] = 1;
+  }
+
+  for(i=0;i<MAXTHREAD;i++){
+    if(curproc->thdnum[i] == 0){
+      np->tid = i;
+      curproc->thdnum[i] = 1;
+      break;
+    }
+  }
+
   // 만약 이전에 할당받은 스레드 번호이면 추가 할당 없이 진행
   if (curproc->thd[np->tid] == 0) {
     // 그렇지 않으면 새롭게 할당받을 페이지 선정
@@ -50,6 +61,9 @@ int thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
     }
     // 메모리 제한 초과하면 실행 안 됨
     if (curproc->memlimit != 0 && curproc->memlimit < curproc->sz + PGSIZE) {
+      curproc->thd[np->tid] = 0;
+      curproc->tstack[idx] = 0;
+      curproc->thdnum[np->tid] = 0;
       cprintf("memlimit error\n");
       return -1;
     }
@@ -62,12 +76,10 @@ int thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
   if(idx == -1){
     cprintf("sz : %d, cnt : %d\n", curproc->sz, cnt);
     panic("need more memory");
-    return -1;
   }
 
   // np의 thread 값 설정
   np->mainthread = curproc;
-  np->tid += 1;
   *thread = np->tid;
 
   // np의 proc 값 설정
@@ -82,7 +94,9 @@ int thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
   // 이미 할당된 페이지면 넘어가고 아니면 새로 할당
   if(pass == 0){
     if((np->sz = allocuvm(np->pgdir, curproc->base + idx * PGSIZE, curproc->base + (idx + 1) * PGSIZE)) == 0){
-      curproc->tstack[idx - 1] = 0;
+      curproc->thd[np->tid] = 0;
+      curproc->tstack[idx] = 0;
+      curproc->thdnum[np->tid] = 0;
       np->state = UNUSED;
       release(&ptable.lock);
       cprintf("allocuvm error\n");
@@ -102,7 +116,9 @@ int thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
   // start_rootine 실행을 위해 스택에 값 지정해줌
   if (copyout(np->pgdir, np->sz - 8, ustack, 8) < 0) {
     deallocuvm(np->pgdir, np->sz + (idx + 1) * PGSIZE, np->sz + idx * PGSIZE);
-    curproc->tstack[idx - 1] = 0;
+    curproc->thd[np->tid] = 0;
+    curproc->tstack[idx] = 0;
+    curproc->thdnum[np->tid] = 0;
     np->state = UNUSED;
     release(&ptable.lock);
     cprintf("copyout error\n");
@@ -119,7 +135,7 @@ int thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
   }
 
   // 스레드 개수 하나 추가
-  curproc->tid += 1;
+  curproc->tcnt += 1;
 
   // fd 설정
   np->cwd = idup(curproc->cwd);
@@ -138,7 +154,8 @@ int thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
 }
 
 // exit와 비슷한 방식으로 동작
-void thread_exit(void *retval){
+void
+thread_exit(void *retval){
   struct proc *curproc = myproc();
 
   if (curproc == initproc) panic("init exiting");
@@ -174,7 +191,8 @@ void thread_exit(void *retval){
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
   // thread 수 감소
-  curproc->mainthread->tid--;
+  curproc->mainthread->tcnt -= 1;
+  curproc->mainthread->thdnum[curproc->tid] = 0;
   sched();
   panic("zombie exit");
 }
@@ -182,7 +200,8 @@ void thread_exit(void *retval){
 // 메인 스레드에서 함수 호출
 // 해당 스레드가 종료 될 때까지 확인하며 종료되면 결과 retval에 저장
 // wait 처럼 자원 반환
-int thread_join(thread_t thread, void **retval){
+int
+thread_join(thread_t thread, void **retval){
   struct proc *curproc = myproc();
   struct proc *p;
 
@@ -208,6 +227,7 @@ int thread_join(thread_t thread, void **retval){
       p->sz = 0;
       p->base = 0;
       p->tid = 0;
+      p->tcnt = 0;
       *retval = p->retval;
       p->retval = 0;
       release(&ptable.lock);
@@ -225,7 +245,8 @@ int thread_join(thread_t thread, void **retval){
 }
 
 // thread_create wrapper function
-int sys_thread_create(void){
+int
+sys_thread_create(void){
   int thread, start_routine, arg;
   if((argint(0, &thread) < 0) || (argint(1, &start_routine) < 0) || (argint(2, &arg) < 0))
 	  return -1;
@@ -234,7 +255,8 @@ int sys_thread_create(void){
 }
 
 // thread_exit wrapper function
-int sys_thread_exit(void){
+int
+sys_thread_exit(void){
   int retval;
 
   if (argint(0, &retval) < 0) return -1;
@@ -245,7 +267,8 @@ int sys_thread_exit(void){
 }
 
 // thread_join wrapper function
-int sys_thread_join(void){
+int
+sys_thread_join(void){
   int thread;
   int retval;
 

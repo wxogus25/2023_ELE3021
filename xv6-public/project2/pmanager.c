@@ -365,7 +365,7 @@ int main(void) {
       }
     } else if (strcmp(ecmd->argv[0], "execute") == 0){
       if (fork1() == 0){
-        // 백그라운드 실행 위헤 한번 더 포크
+        // 백그라운드 실행 위해 한번 더 포크
         if(fork1() == 0){
           if(exec2(ecmd->argv[1], ecmd->argv+1, atoi(ecmd->argv[2])) == -1)
             printf(1, "execute fail\n");
