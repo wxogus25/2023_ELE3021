@@ -57,7 +57,6 @@ struct proc {
   void* retval;                // 스레드 return value
   char tstack[MAXPAGE];        // 메인스레드로부터 몇번째 위치(tid)의 메모리(페이지)가 사용중인지 확인하는 용도
                                // 총 2048개 사용하며, 대략 8MB 정도 됨
-  int thd[MAXTHREAD];          // 스레드가 할당받은 페이지 번호 저장
   int thdnum[MAXTHREAD];       // 현재 사용중인 스레드 번호
   int base;                    // 기본 크기(메모리 계산에 사용)
   int tcnt;                    // 스레드 개수(메인 스레드 전용)

@@ -126,7 +126,6 @@ exec(char *path, char **argv)
       curproc->tstack[i] = 0;
     }
     for (int i = 0; i < MAXTHREAD; i++){
-      curproc->thd[i] = 0;
       curproc->thdnum[i] = 0;
     }
   }

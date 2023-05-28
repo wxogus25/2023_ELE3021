@@ -99,7 +99,6 @@ found:
   p->base = 0;
   p->sz = 0;
   for(int i=0;i<MAXTHREAD;i++){
-    p->thd[i] = 0;
     p->thdnum[i] = 0;
   }
   for(int i=0;i<MAXPAGE;i++)
@@ -261,7 +260,6 @@ fork(void) {
   }
   // 새로운 스레드 사용 가능하도록 초기화
   for (i = 0; i< MAXTHREAD; i++){
-    np->thd[i] = 0;
     np->thdnum[i] = 0;
   }
 
@@ -385,7 +383,6 @@ wait(void) {
           }
           for (int i = 0; i < MAXTHREAD; i++){
             p->thdnum[i] = 0;
-            p->thd[i] = 0;
           }
         }
         // p 초기화

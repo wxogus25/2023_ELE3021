@@ -18,7 +18,7 @@ extern struct proc *initproc;
 // fork와 비슷한 방식으로 동작
 int
 thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
-  int i, idx = -1, pass = 0, cnt = 0;
+  int i, idx = -1, cnt = 0;
   struct proc *np;
   struct proc *curproc = myproc();
 
@@ -47,29 +47,20 @@ thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
     }
   }
 
-  // 만약 이전에 할당받은 스레드 번호이면 추가 할당 없이 진행
-  if (curproc->thd[np->tid] == 0) {
-    // 그렇지 않으면 새롭게 할당받을 페이지 선정
-    for (i = 0; i < MAXPAGE; i++) {
-      if (curproc->tstack[i] == 0) {
-        idx = i;
-        curproc->thd[np->tid] = i + 1;
-        curproc->tstack[i] = 1;
-        break;
-      }
-      cnt++;
+  for (i = 0; i < MAXPAGE; i++) {
+    if (curproc->tstack[i] == 0) {
+      idx = i;
+      curproc->tstack[i] = 1;
+      break;
     }
-    // 메모리 제한 초과하면 실행 안 됨
-    if (curproc->memlimit != 0 && curproc->memlimit < curproc->sz + PGSIZE) {
-      curproc->thd[np->tid] = 0;
-      curproc->tstack[idx] = 0;
-      curproc->thdnum[np->tid] = 0;
-      cprintf("memlimit error\n");
-      return -1;
-    }
-  } else {
-    pass = 1;
-    idx = curproc->thd[np->tid] - 1;
+    cnt++;
+  }
+  // 메모리 제한 초과하면 실행 안 됨
+  if (curproc->memlimit != 0 && curproc->memlimit < curproc->sz + PGSIZE) {
+    curproc->tstack[idx] = 0;
+    curproc->thdnum[np->tid] = 0;
+    cprintf("memlimit error\n");
+    return -1;
   }
 
   // 선택된 페이지 없으면 panic
@@ -91,19 +82,13 @@ thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
   np->stacksize = curproc->stacksize;
   np->base = curproc->base;
 
-  // 이미 할당된 페이지면 넘어가고 아니면 새로 할당
-  if(pass == 0){
-    if((np->sz = allocuvm(np->pgdir, curproc->base + idx * PGSIZE, curproc->base + (idx + 1) * PGSIZE)) == 0){
-      curproc->thd[np->tid] = 0;
-      curproc->tstack[idx] = 0;
-      curproc->thdnum[np->tid] = 0;
-      np->state = UNUSED;
-      release(&ptable.lock);
-      cprintf("allocuvm error\n");
-      return -1;
-    }
-  }else{
-    np->sz = curproc->sz;
+  if((np->sz = allocuvm(np->pgdir, curproc->base + idx * PGSIZE, curproc->base + (idx + 1) * PGSIZE)) == 0){
+    curproc->tstack[idx] = 0;
+    curproc->thdnum[np->tid] = 0;
+    np->state = UNUSED;
+    release(&ptable.lock);
+    cprintf("allocuvm error\n");
+    return -1;
   }
 
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
@@ -116,7 +101,6 @@ thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
   // start_rootine 실행을 위해 스택에 값 지정해줌
   if (copyout(np->pgdir, np->sz - 8, ustack, 8) < 0) {
     deallocuvm(np->pgdir, np->sz + (idx + 1) * PGSIZE, np->sz + idx * PGSIZE);
-    curproc->thd[np->tid] = 0;
     curproc->tstack[idx] = 0;
     curproc->thdnum[np->tid] = 0;
     np->state = UNUSED;
