@@ -11,4 +11,5 @@
 #define LOGSIZE      (MAXOPBLOCKS*3)  // max data blocks in on-disk log
 #define NBUF         (MAXOPBLOCKS*3)  // size of disk block cache
 #define FSSIZE       1000  // size of file system in blocks
-#define MAXTHREAD    2048
+#define MAXPAGE      2048  // 최대 페이지 개수
+#define MAXTHREAD    64

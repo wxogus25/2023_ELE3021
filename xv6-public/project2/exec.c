@@ -70,11 +70,13 @@ exec(char *path, char **argv)
   // Make the first inaccessible.  Use the second as the user stack.
   sz = PGROUNDUP(sz);
 
+  // main thread 참조
   if (curproc->mainthread == 0)
     main = curproc;
   else
     main = curproc->mainthread;
 
+  // 메모리 제한 확인
   if (main->memlimit != 0 && sz + 2 * PGSIZE > main->memlimit)
     goto bad;
 
@@ -108,6 +110,7 @@ exec(char *path, char **argv)
       last = s+1;
   safestrcpy(curproc->name, last, sizeof(curproc->name));
 
+  // exec 실행되면서 다른 스레드 전부 종료시킴
   acquire(&ptable.lock);
   for(struct proc *p = ptable.proc; p<&ptable.proc[NPROC];p++){
     if(p->pid == curproc->pid && p != curproc && p->state != ZOMBIE){
@@ -115,14 +118,18 @@ exec(char *path, char **argv)
     }
   }
   release(&ptable.lock);
+  // 메모리 관련 데이터 초기화
   int check = 0;
   if (curproc->mainthread == 0) {
     check = 1;
-    for (int i = 0; i < MAXTHREAD; i++) {
+    for (int i = 0; i < MAXPAGE; i++) {
       curproc->tstack[i] = 0;
     }
-  }else
-    curproc->memlimit = curproc->mainthread->memlimit;
+    for (int i = 0; i < MAXTHREAD; i++){
+      curproc->thd[i] = 0;
+    }
+  }
+  curproc->memlimit = main->memlimit;
   // Commit to the user image.
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;
@@ -132,7 +139,7 @@ exec(char *path, char **argv)
   curproc->tid = 0;
   curproc->mainthread = 0;
   curproc->retval = 0;
-  curproc->pgcnt = 0;
+  curproc->base = sz;
   switchuvm(curproc);
   if(check)
     freevm(oldpgdir);

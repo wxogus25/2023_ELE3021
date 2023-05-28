@@ -7,6 +7,9 @@
 #include "proc.h"
 #include "spinlock.h"
 
+// ( {2})(?: {2})(\b|(?!=[,'";\.:\*\\\/\{\}\[\]\(\)]))
+// $1
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -25,11 +28,13 @@ pinit(void)
 {
   initlock(&ptable.lock, "ptable");
 }
+
 // Must be called with interrupts disabled
 int
 cpuid() {
   return mycpu()-cpus;
 }
+
 // Must be called with interrupts disabled to avoid the caller being
 // rescheduled between reading lapicid and running through the loop.
 struct cpu*
@@ -49,6 +54,7 @@ mycpu(void)
   }
   panic("unknown apicid\n");
 }
+
 // Disable interrupts so that we are not rescheduled
 // while reading proc from the cpu structure
 struct proc*
@@ -61,6 +67,7 @@ myproc(void) {
   popcli();
   return p;
 }
+
 //PAGEBREAK: 32
 // Look in the process table for an UNUSED proc.
 // If found, change state to EMBRYO and initialize
@@ -81,13 +88,18 @@ struct proc *allocproc(void) {
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
-  // p의 memlimit, stacksize, tid, mainthread, retval 초기화
+  // p의 스레드 관련 변수 초기화
   p->memlimit = 0;
   p->stacksize = 1;
   p->tid = 0;
   p->mainthread = 0;
   p->retval = 0;
-  p->pgcnt = 0;
+  p->base = 0;
+  p->sz = 0;
+  for(int i=0;i<MAXTHREAD;i++)
+    p->thd[i] = 0;
+  for(int i=0;i<MAXPAGE;i++)
+    p->tstack[i] = 0;
 
   release(&ptable.lock);
 
@@ -130,6 +142,7 @@ userinit(void)
     panic("userinit: out of memory?");
   inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
   p->sz = PGSIZE;
+  p->base = PGSIZE;
   memset(p->tf, 0, sizeof(*p->tf));
   p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
   p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
@@ -155,48 +168,51 @@ userinit(void)
 
 // Grow current process's memory by n bytes.
 // Return 0 on success, -1 on failure.
-// 연속 할당으로 바꾸기
 int growproc(int n) {
-  uint sz;
-  int i;
+  int i, cnt = 0;
   struct proc *curproc = myproc();
   struct proc *main;
 
   acquire(&ptable.lock);
 
+  // 메인 스레드 선택
   if (curproc->mainthread != 0)
     main = curproc->mainthread;
   else
     main = curproc;
 
-  sz = main->sz - main->pgcnt * PGSIZE;
-
+  // 메모리 제한 확인
   if (main->memlimit != 0 && PGROUNDUP(main->sz + n) > main->memlimit) {
     release(&ptable.lock);
     return -1;
   }
 
-  for(i=0;i<MAXTHREAD;i++){
+  // 메모리는 앞에서부터 연속적으로 할당받기 때문에
+  // 연속된 공간에 위치하게 된다
+  for (i = 0; i < MAXPAGE; i++) {
     if(main->tstack[i] == 0){
-      if((allocuvm(curproc->pgdir, sz + i * PGSIZE, sz + (i + 1) * PGSIZE)) == 0)
+      // 페이지 하나씩 할당 받음
+      if((allocuvm(main->pgdir, main->base + i * PGSIZE, main->base + (i + 1) * PGSIZE)) == 0){
+        panic("growproc error");
         return -1;
-      main->pgcnt += 1;
+      }
+      // 할당받은 페이지 체크하고 main의 sz 증가, n 감소
       main->tstack[i] = 1;
       main->sz += PGSIZE;
+      cnt += PGSIZE;
       n -= PGSIZE;
       if(n <= 0){
         break;
       }
     }
   }
+  cprintf("growproc : %d, sz : %d\n", cnt, main->sz);
 
-  curproc->sz = main->sz;
-
-  // if (n > 0) {
-  //   if ((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0) return -1;
-  // } else if (n < 0) {
-  //   if ((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0) return -1;
-  // }
+  // 증가시킨 크기를 다른 스레드에도 반영시켜줌
+  for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+    if (p->pid == curproc->pid)
+      p->sz = main->sz;
+  }
 
   release(&ptable.lock);
 
@@ -217,6 +233,8 @@ int fork(void) {
     return -1;
   }
 
+  acquire(&ptable.lock);
+  // 메인 스레드 선택
   if(curproc->mainthread != 0)
     main = curproc->mainthread;
   else
@@ -232,30 +250,34 @@ int fork(void) {
   np->sz = main->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
-  for(i=0;i<MAXTHREAD;i++){
+  // 사용중인 페이지 표시
+  for (i = 0; i < MAXPAGE; i++) {
     np->tstack[i] = main->tstack[i];
   }
-  
+  // 새로운 스레드 사용 가능하도록 초기화
+  for (i = 0; i< MAXTHREAD; i++){
+    np->thd[i] = 0;
+  }
+
   np->memlimit = main->memlimit;
   np->stacksize = main->stacksize;
   np->mainthread = 0;
   np->tid = 0;
   np->retval = 0;
-  np->pgcnt = main->pgcnt;
+  np->base = main->sz;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
 
+  // fd 설정
   for (i = 0; i < NOFILE; i++)
-    if (main->ofile[i])
-      np->ofile[i] = filedup(main->ofile[i]);
-  np->cwd = idup(main->cwd);
+    if (curproc->ofile[i])
+      np->ofile[i] = filedup(curproc->ofile[i]);
+  np->cwd = idup(curproc->cwd);
 
   safestrcpy(np->name, main->name, sizeof(main->name));
 
   pid = np->pid;
-
-  acquire(&ptable.lock);
 
   np->state = RUNNABLE;
 
@@ -289,17 +311,21 @@ void exit(void) {
 
   acquire(&ptable.lock);
 
-  // Parent might be sleeping in wait().
+  // 메인 스레드 선택
   if(curproc->mainthread == 0)
     main = curproc;
   else
     main = curproc->mainthread;
 
+  // Parent might be sleeping in wait().
+  // 다른 스레드가 아직 종료되지 않았으면 parent를 깨우지 않음
   if(main->tid == 0)
     wakeup1(main->parent);
-  main->tid -= 1;
+  else
+    main->tid -= 1;
 
   // Pass abandoned children to init.
+  // 자식 프로세스 init에 이양
   for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
     if (p->parent == curproc) {
       p->parent = initproc;
@@ -307,6 +333,7 @@ void exit(void) {
         wakeup1(initproc);
     }
     // 스레드 모두 kill (exit 호출 유도)
+    // exit 호출 될 때마다 main->tid가 감소하여 다 줄어들면 parent 깨움
     if (p->pid == curproc->pid && p != curproc && p->state != ZOMBIE) {
       p->killed = 1;
     }
@@ -329,6 +356,7 @@ int wait(void) {
   for (;;) {
     // Scan through table looking for exited children.
     havekids = 0;
+    pid = -1;
     for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
       if (p->parent != curproc) continue;
       havekids = 1;
@@ -337,24 +365,29 @@ int wait(void) {
         pid = p->pid;
         kfree(p->kstack);
         p->kstack = 0;
+        // 메인 스레드이면 메모리 초기화
         if (p->mainthread == 0){
           freevm(p->pgdir);
-          for(int i=0;i<MAXTHREAD;i++){
+          for (int i = 0; i < MAXPAGE; i++) {
             p->tstack[i] = 0;
           }
+          for (int i = 0; i < MAXTHREAD; i++){
+            p->thd[i] = 0;
+          }
         }
+        // p 초기화
         p->pid = 0;
         p->parent = 0;
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
-        // p의 memlimit, stacksize, mainthread, tid, retval 0으로 초기화
         p->memlimit = 0;
         p->stacksize = 0;
         p->mainthread = 0;
         p->tid = 0;
         p->retval = 0;
-        p->pgcnt = 0;
+        p->base = 0;
+        p->sz = 0;
       }
     }
     if (pid != -1){
@@ -363,6 +396,10 @@ int wait(void) {
     }
     // No point waiting if we don't have any children.
     if (!havekids || curproc->killed) {
+      if(curproc->killed)
+        cprintf("killed\n");
+      if(!havekids)
+        cprintf("missing child\n");
       release(&ptable.lock);
       return -1;
     }
@@ -545,6 +582,7 @@ kill(int pid)
 
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    // pid가 일치하는 모든 프로세스 Kill
     if(p->pid == pid){
       p->killed = 1;
       // Wake process from sleep if necessary.
