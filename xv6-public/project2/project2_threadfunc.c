@@ -18,7 +18,7 @@ extern struct proc *initproc;
 // fork와 비슷한 방식으로 동작
 int
 thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
-  int i, idx = -1, cnt = 0;
+  int i, idx = -1, cnt = 0, check = 0;
   struct proc *np;
   struct proc *curproc = myproc();
 
@@ -43,8 +43,15 @@ thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
     if(curproc->thdnum[i] == 0){
       np->tid = i;
       curproc->thdnum[i] = 1;
+      check = 1;
       break;
     }
+  }
+
+  if (check == 0) {
+    release(&ptable.lock);
+    cprintf("thdnum pull\n");
+    return -1;
   }
 
   for (i = 0; i < MAXPAGE; i++) {
@@ -59,9 +66,11 @@ thread_create(thread_t *thread, void *(*start_rootine)(void *), void *arg){
   if (curproc->memlimit != 0 && curproc->memlimit < curproc->sz + PGSIZE) {
     curproc->tstack[idx] = 0;
     curproc->thdnum[np->tid] = 0;
+    release(&ptable.lock);
     cprintf("memlimit error\n");
     return -1;
   }
+
 
   // 선택된 페이지 없으면 panic
   if(idx == -1){
