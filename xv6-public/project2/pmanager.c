@@ -370,12 +370,10 @@ int main(void) {
           if(exec2(ecmd->argv[1], ecmd->argv+1, atoi(ecmd->argv[2])) == -1)
             printf(1, "execute fail\n");
           exit();
-        }else{
-          // 여기서 자식 프로세스 정리
-          wait();
-          exit();
         }
+        exit();
       }
+      wait();
     } else if (strcmp(ecmd->argv[0], "memlim") == 0){
       if(setmemorylimit(atoi(ecmd->argv[1]), atoi(ecmd->argv[2])) == 0)
         printf(1, "memlim success\n");
