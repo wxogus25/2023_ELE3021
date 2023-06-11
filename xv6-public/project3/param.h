@@ -11,7 +11,5 @@
 #define LOGSIZE      (MAXOPBLOCKS*3)  // max data blocks in on-disk log
 // 버퍼 키우고싶을때 만지면 됨
 #define NBUF         (MAXOPBLOCKS*3)  // size of disk block cache
-// FSSIZE 무조건 바꿔야 함
-#define FSSIZE       1000  // size of file system in blocks
-#define MAXPAGE      2048  // 최대 페이지 개수
-#define MAXTHREAD    64
+// MAXFILE과 동일하게 설정해둠
+#define FSSIZE 2113548  // size of file system in blocks

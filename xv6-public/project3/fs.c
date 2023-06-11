@@ -369,10 +369,11 @@ iunlockput(struct inode *ip)
 
 // Return the disk block address of the nth block in inode ip.
 // If there is no such block, bmap allocates one.
+// double indirect, triple indirect 되도록 수정
 static uint
 bmap(struct inode *ip, uint bn)
 {
-  uint addr, *a;
+  uint addr, *a, tidx, didx, idx;
   struct buf *bp;
 
   if(bn < NDIRECT){
@@ -382,14 +383,53 @@ bmap(struct inode *ip, uint bn)
   }
   bn -= NDIRECT;
 
-  if(bn < NINDIRECT){
-    // Load indirect block, allocating if necessary.
-    if((addr = ip->addrs[NDIRECT]) == 0)
+  if (bn < NINDIRECT * NINDIRECT) {
+    idx = bn % NINDIRECT;
+    didx = bn / NINDIRECT;
+    if ((addr = ip->addrs[NDIRECT]) == 0)
       ip->addrs[NDIRECT] = addr = balloc(ip->dev);
     bp = bread(ip->dev, addr);
-    a = (uint*)bp->data;
-    if((addr = a[bn]) == 0){
-      a[bn] = addr = balloc(ip->dev);
+    a = (uint *)bp->data;
+    if ((addr = a[didx]) == 0) {
+      a[didx] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    bp = bread(ip->dev, addr);
+    a = (uint *)bp->data;
+    if ((addr = a[idx]) == 0) {
+      a[idx] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    return addr;
+  }
+  bn -= NINDIRECT * NINDIRECT;
+
+  if (bn < NINDIRECT * NINDIRECT * NINDIRECT) {
+    idx = bn % NINDIRECT;
+    didx = (bn % NINDIRECT * NINDIRECT) / NINDIRECT;
+    tidx = bn / NINDIRECT * NINDIRECT;
+    if ((addr = ip->addrs[NDIRECT + 1]) == 0)
+      ip->addrs[NDIRECT + 1] = addr = balloc(ip->dev);
+    bp = bread(ip->dev, addr);
+    a = (uint *)bp->data;
+    if ((addr = a[tidx]) == 0) {
+      a[tidx] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    bp = bread(ip->dev, addr);
+    a = (uint *)bp->data;
+    if ((addr = a[didx]) == 0) {
+      a[didx] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    bp = bread(ip->dev, addr);
+    a = (uint *)bp->data;
+    if ((addr = a[idx]) == 0) {
+      a[idx] = addr = balloc(ip->dev);
       log_write(bp);
     }
     brelse(bp);
@@ -404,12 +444,13 @@ bmap(struct inode *ip, uint bn)
 // to it (no directory entries referring to it)
 // and has no in-memory reference to it (is
 // not an open file or current directory).
+// double indirect, triple indirect 되도록 수정
 static void
 itrunc(struct inode *ip)
 {
-  int i, j;
-  struct buf *bp;
-  uint *a;
+  int i, j, k;
+  struct buf *bp, *dbp, *tbp;
+  uint *a, *d, *t;
 
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
@@ -419,15 +460,51 @@ itrunc(struct inode *ip)
   }
 
   if(ip->addrs[NDIRECT]){
-    bp = bread(ip->dev, ip->addrs[NDIRECT]);
-    a = (uint*)bp->data;
-    for(j = 0; j < NINDIRECT; j++){
-      if(a[j])
-        bfree(ip->dev, a[j]);
+    dbp = bread(ip->dev, ip->addrs[NDIRECT]);
+    d = (uint*)dbp->data;
+    for(i = 0; i < NINDIRECT; i++){
+      if(d[i]){
+        bp = bread(ip->dev, d[i]);
+        a = (uint*)bp->data;
+        for(j = 0; j < NINDIRECT; j++){
+          if(a[j])
+            bfree(ip->dev, a[j]);
+        }
+        brelse(bp);
+        bfree(ip->dev, d[i]);
+      }
     }
-    brelse(bp);
+    brelse(dbp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+
+  if(ip->addrs[NDIRECT + 1]){
+    tbp = bread(ip->dev, ip->addrs[NDIRECT + 1]);
+    t = (uint*)tbp->data;
+    for(i = 0; i < NINDIRECT; i++){
+      if(t[i]){
+        dbp = bread(ip->dev, t[i]);
+        d = (uint*)dbp->data;
+        for(j = 0; j < NINDIRECT; j++){
+          if (d[j]) {
+            bp = bread(ip->dev, d[j]);
+            a = (uint *)bp->data;
+            for (k = 0; k < NINDIRECT; k++) {
+              if (a[k])
+                bfree(ip->dev, a[k]);
+            }
+            brelse(bp);
+            bfree(ip->dev, d[j]);
+          }
+        }
+        brelse(dbp);
+        bfree(ip->dev, t[i]);
+      }
+    }
+    brelse(tbp);
+    bfree(ip->dev, ip->addrs[NDIRECT + 1]);
+    ip->addrs[NDIRECT + 1] = 0;
   }
 
   ip->size = 0;

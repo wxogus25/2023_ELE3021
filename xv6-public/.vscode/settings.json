@@ -15,6 +15,12 @@
         "stat.h": "c",
         "elf.h": "c",
         "project2_thread.h": "c",
-        "typeinfo": "c"
+        "typeinfo": "c",
+        "cmath": "c",
+        "compare": "c",
+        "concepts": "c",
+        "type_traits": "c",
+        "limits": "c",
+        "new": "c"
     }
 }
