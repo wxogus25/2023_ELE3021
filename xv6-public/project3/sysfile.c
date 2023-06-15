@@ -52,6 +52,59 @@ fdalloc(struct file *f)
   return -1;
 }
 
+
+// 새로운 파일 생성하는 함수
+static struct inode*
+create(char *path, short type, short major, short minor)
+{
+  struct inode *ip, *dp;
+  char name[DIRSIZ];
+
+  if((dp = nameiparent(path, name)) == 0)
+    return 0;
+  ilock(dp);
+
+
+  // 부모 디렉토리에서 파일 찾아서 반환함
+  if((ip = dirlookup(dp, name, 0)) != 0){
+    iunlockput(dp);
+    ilock(ip);
+    // 이미 존재하면 inode 반환
+    if(type == T_FILE && ip->type == T_FILE)
+      return ip;
+    if(type == T_SYM && ip->type == T_SYM)
+      return ip;
+
+    iunlockput(ip);
+    return 0;
+  }
+
+  // 없으면 inode 생성
+  if((ip = ialloc(dp->dev, type)) == 0)
+    panic("create: ialloc");
+
+  ilock(ip);
+  ip->major = major;
+  ip->minor = minor;
+  ip->nlink = 1;
+  iupdate(ip);
+
+  if(type == T_DIR){  // Create . and .. entries.
+    dp->nlink++;  // for ".."
+    iupdate(dp);
+    // No ip->nlink++ for ".": avoid cyclic ref count.
+    if(dirlink(ip, ".", ip->inum) < 0 || dirlink(ip, "..", dp->inum) < 0)
+      panic("create dots");
+  }
+
+  if(dirlink(dp, name, ip->inum) < 0)
+    panic("create: dirlink");
+
+  iunlockput(dp);
+
+  return ip;
+}
+
 int
 sys_dup(void)
 {
@@ -138,6 +191,7 @@ sys_link(void)
   }
 
   ip->nlink++;
+  // 여기서 inode disk에 옮김
   iupdate(ip);
   iunlock(ip);
 
@@ -162,6 +216,47 @@ bad:
   iunlockput(ip);
   end_op();
   return -1;
+}
+
+// symbolic link 생성하는 함수
+int
+sys_symlink(void)
+{
+  char *new, *old;
+  struct inode *ip;
+
+  if(argstr(0, &old) < 0 || argstr(1, &new) < 0)
+    return -1;
+  
+  begin_op();
+
+  // old 경로 유효한지 확인
+  if (namei(old) == (struct inode *)0) {
+    end_op();
+    return -1;
+  }
+
+  // 원본파일(inode)의 nlink만 증가시키고 dirlink로 링크만 생성하는 hard link와 달리,
+  // symbolic link는 nlink 증가시키지 않고 실제 파일을 생성하여 생성된 파일이 원본파일 가리켜야함
+  // 때문에 create 함수 호출하여 파일을 생성함
+  if((ip = create(new, T_SYM, 0, 0)) == 0){
+    end_op();
+    return -1;
+  }
+
+  // writei를 통해 파일에 old 경로 기록하고 sys_open 때 readi로 읽어서 실행함
+  if(writei(ip, old, 0, strlen(old) + 1) < 0){
+    end_op();
+    return -1;
+  }
+
+  // 업데이트 기록하고 메모리에서 제거
+  // 더이상 참조 없으면 디스크에 기록
+  iupdate(ip);
+  iunlockput(ip);
+
+  end_op();
+  return 0;
 }
 
 // Is the directory dp empty except for "." and ".." ?
@@ -238,54 +333,14 @@ bad:
   return -1;
 }
 
-static struct inode*
-create(char *path, short type, short major, short minor)
-{
-  struct inode *ip, *dp;
-  char name[DIRSIZ];
-
-  if((dp = nameiparent(path, name)) == 0)
-    return 0;
-  ilock(dp);
-
-  if((ip = dirlookup(dp, name, 0)) != 0){
-    iunlockput(dp);
-    ilock(ip);
-    if(type == T_FILE && ip->type == T_FILE)
-      return ip;
-    iunlockput(ip);
-    return 0;
-  }
-
-  if((ip = ialloc(dp->dev, type)) == 0)
-    panic("create: ialloc");
-
-  ilock(ip);
-  ip->major = major;
-  ip->minor = minor;
-  ip->nlink = 1;
-  iupdate(ip);
-
-  if(type == T_DIR){  // Create . and .. entries.
-    dp->nlink++;  // for ".."
-    iupdate(dp);
-    // No ip->nlink++ for ".": avoid cyclic ref count.
-    if(dirlink(ip, ".", ip->inum) < 0 || dirlink(ip, "..", dp->inum) < 0)
-      panic("create dots");
-  }
-
-  if(dirlink(dp, name, ip->inum) < 0)
-    panic("create: dirlink");
-
-  iunlockput(dp);
-
-  return ip;
-}
-
 int
 sys_open(void)
 {
   char *path;
+  // 파일 경로 저장, char read temp
+  char p[1000], temp;
+  // p에 한 바이트씩 쓰기 위한 index
+  int idx;
   int fd, omode;
   struct file *f;
   struct inode *ip;
@@ -298,19 +353,48 @@ sys_open(void)
   if(omode & O_CREATE){
     ip = create(path, T_FILE, 0, 0);
     if(ip == 0){
-      end_op();
-      return -1;
+      // type이 FILE이 아니면 SYM으로 존재하는지 체크
+      ip = create(path, T_SYM, 0, 0);
+      if(ip == 0){
+        end_op();
+        return -1;
+      }
     }
-  } else {
+  }else{
     if((ip = namei(path)) == 0){
       end_op();
       return -1;
     }
     ilock(ip);
-    if(ip->type == T_DIR && omode != O_RDONLY){
+    if(ip->type == T_DIR && omode != O_RDONLY && omode != O_META){
       iunlockput(ip);
       end_op();
       return -1;
+    }
+  }
+
+  // omode가 O_META이면 메타데이터만 요구하는 것이므로 link 따라가지 않음
+  if(!(omode & O_META)){
+    // symbolic link가 symbolic link를 가리키는 경우 고려하여 사용
+    while(ip->type == T_SYM) {
+      // 변수 초기화
+      temp = 1;
+      idx = 0;
+      // 파일(inode)에서 원본파일 경로 read
+      while (temp) {
+        readi(ip, &temp, idx, 1);
+        p[idx++] = temp;
+      }
+      // ip unlock and put
+      iunlockput(ip);
+      // 찾은 원본파일 경로에서 inode 가져옴
+      if((ip = namei(p)) == 0){
+        end_op();
+        return -1;
+      }
+      // inode lock
+      ilock(ip);
+      // 이후 해당 inode도 symbolic 이면 다시 같은 과정 반복
     }
   }
 

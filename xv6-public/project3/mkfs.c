@@ -252,6 +252,7 @@ balloc(int used)
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
+// double indirect, triple indirect 되도록 수정
 void
 iappend(uint inum, void *xp, int n)
 {
@@ -268,53 +269,72 @@ iappend(uint inum, void *xp, int n)
   rinode(inum, &din);
   off = xint(din.size);
   // printf("append inum %d at off %d sz %d\n", inum, off, n);
-  while(n > 0){
+  while (n > 0) {
+    // off가 계속 증가하기 때문에 fbn도 계속 증가한다.
+    // fbn이 direct, D direct, T direct 중 어디에 속하는지 보고 처리해줌
     fbn = off / BSIZE;
     assert(fbn < MAXFILE);
+
+    // fbn이 direct에 속하면
     if(fbn < NDIRECT){
+      // 직접적으로 din.addrs에 접근하여 할당
       if(xint(din.addrs[fbn]) == 0){
         din.addrs[fbn] = xint(freeblock++);
       }
       x = xint(din.addrs[fbn]);
     } else if(fbn < NDIRECT + NINDIRECT * NINDIRECT){
       // double indirect 사용
+      // D ind ptr 저장하는 NDIRECT 위치 참조
       if(xint(din.addrs[NDIRECT]) == 0){
         din.addrs[NDIRECT] = xint(freeblock++);
       }
+      // D ind를 위한 idx, didx 계산
       idx = (fbn - NDIRECT) % NINDIRECT;
       didx = (fbn - NDIRECT) / NINDIRECT;
+      // dindirect 배열에 load 하고 didx 참조
       rsect(xint(din.addrs[NDIRECT]), (char *)dindirect);
       if (dindirect[didx] == 0) {
         dindirect[didx] = xint(freeblock++);
+        // 블럭 할당하고 다시 쓰기
         wsect(xint(din.addrs[NDIRECT]), (char *)dindirect);
       }
+      // indirect 배열에 load 하고 idx 참조
       rsect(xint(dindirect[didx]), (char *)indirect);
       if (indirect[idx] == 0) {
         indirect[idx] = xint(freeblock++);
+        // 블럭 할당하고 다시 쓰기
         wsect(xint(dindirect[didx]), (char *)indirect);
       }
       x = xint(indirect[idx]);
     }else{
       // triple indirect 사용
+      // T ind ptr 저장하는 NDIRECT + 1 위치 참조
       if (xint(din.addrs[NDIRECT + 1]) == 0) {
         din.addrs[NDIRECT + 1] = xint(freeblock++);
       }
+      // T ind를 위한 idx, didx, tidx 계산
       idx = (fbn - (NDIRECT + NINDIRECT * NINDIRECT)) % NINDIRECT;
       didx = ((fbn - (NDIRECT + NINDIRECT * NINDIRECT)) % (NINDIRECT * NINDIRECT)) / NINDIRECT;
       tidx = (fbn - (NDIRECT + NINDIRECT * NINDIRECT)) / (NINDIRECT * NINDIRECT);
+      // tindirect 배열에 load 하고 tidx 참조
       rsect(xint(din.addrs[NDIRECT + 1]), (char *)tindirect);
       if (tindirect[tidx] == 0) {
         tindirect[tidx] = xint(freeblock++);
+        // 블럭 할당하고 다시 쓰기
         wsect(xint(din.addrs[NDIRECT + 1]), (char *)tindirect);
       }
+      // dindirect 배열에 load 하고 didx 참조
       rsect(xint(tindirect[tidx]), (char *)dindirect);
       if (dindirect[didx] == 0) {
         dindirect[didx] = xint(freeblock++);
+        // 블럭 할당하고 다시 쓰기
         wsect(xint(tindirect[tidx]), (char *)dindirect);
       }
+      // indirect 배열에 load 하고 idx 참조
       rsect(xint(dindirect[didx]), (char *)indirect);
       if (indirect[idx] == 0) {
         indirect[idx] = xint(freeblock++);
+        // 블럭 할당하고 다시 쓰기
         wsect(xint(dindirect[didx]), (char *)indirect);
       }
       x = xint(indirect[idx]);

@@ -376,58 +376,67 @@ bmap(struct inode *ip, uint bn)
   uint addr, *a, tidx, didx, idx;
   struct buf *bp;
 
+  // NDIRECT보다 작으면 그냥 블럭 사용
   if(bn < NDIRECT){
     if((addr = ip->addrs[bn]) == 0)
       ip->addrs[bn] = addr = balloc(ip->dev);
     return addr;
-  }
-  bn -= NDIRECT;
-
-  if (bn < NINDIRECT * NINDIRECT) {
+  }else if (bn < NDIRECT + NINDIRECT * NINDIRECT) {
+    bn -= NDIRECT;
+    // double indirect를 위한 idx, didx 계산
     idx = bn % NINDIRECT;
     didx = bn / NINDIRECT;
+    // double ind block ptr 저장할 NDIRECT 참조
     if ((addr = ip->addrs[NDIRECT]) == 0)
       ip->addrs[NDIRECT] = addr = balloc(ip->dev);
     bp = bread(ip->dev, addr);
     a = (uint *)bp->data;
+    // idx 저장된 double ind 블럭의 index로 접근
     if ((addr = a[didx]) == 0) {
       a[didx] = addr = balloc(ip->dev);
       log_write(bp);
     }
     brelse(bp);
+    // 최하위 레벨 블럭 read
     bp = bread(ip->dev, addr);
     a = (uint *)bp->data;
+    // 해당하는 idx 주소 위치 할당
     if ((addr = a[idx]) == 0) {
       a[idx] = addr = balloc(ip->dev);
       log_write(bp);
     }
     brelse(bp);
     return addr;
-  }
-  bn -= NINDIRECT * NINDIRECT;
-
-  if (bn < NINDIRECT * NINDIRECT * NINDIRECT) {
+  } else if (bn < NDIRECT + NINDIRECT * NINDIRECT * (NINDIRECT + 1)){
+    bn -= NDIRECT + NINDIRECT * NINDIRECT;
+    // triple indirect를 위한 idx, didx 계산
     idx = bn % NINDIRECT;
-    didx = (bn % NINDIRECT * NINDIRECT) / NINDIRECT;
-    tidx = bn / NINDIRECT * NINDIRECT;
+    didx = (bn % (NINDIRECT * NINDIRECT)) / NINDIRECT;
+    tidx = bn / (NINDIRECT * NINDIRECT);
+    // triple ind block ptr 저장할 NDIRECT + 1 참조
     if ((addr = ip->addrs[NDIRECT + 1]) == 0)
       ip->addrs[NDIRECT + 1] = addr = balloc(ip->dev);
     bp = bread(ip->dev, addr);
     a = (uint *)bp->data;
+    // didx 저장된 triple ind 블럭의 index로 접근
     if ((addr = a[tidx]) == 0) {
       a[tidx] = addr = balloc(ip->dev);
       log_write(bp);
     }
     brelse(bp);
+    // double ind 블럭 read
     bp = bread(ip->dev, addr);
     a = (uint *)bp->data;
+    // 블럭의 idx 위치 할당
     if ((addr = a[didx]) == 0) {
       a[didx] = addr = balloc(ip->dev);
       log_write(bp);
     }
     brelse(bp);
+    // 최하위 레벨 블럭 read
     bp = bread(ip->dev, addr);
     a = (uint *)bp->data;
+    // 해당하는 주소 idx 위치 할당
     if ((addr = a[idx]) == 0) {
       a[idx] = addr = balloc(ip->dev);
       log_write(bp);
@@ -436,6 +445,7 @@ bmap(struct inode *ip, uint bn)
     return addr;
   }
 
+  // T ind 로도 부족하면 메모리 초과
   panic("bmap: out of range");
 }
 
@@ -459,19 +469,26 @@ itrunc(struct inode *ip)
     }
   }
 
+  // NDIRECT 위치 존재하면 double ind 존재하는 것임
   if(ip->addrs[NDIRECT]){
     dbp = bread(ip->dev, ip->addrs[NDIRECT]);
     d = (uint*)dbp->data;
+    // double ind 블럭의 entry 하나씩 순회하며 제거
     for(i = 0; i < NINDIRECT; i++){
       if(d[i]){
         bp = bread(ip->dev, d[i]);
         a = (uint*)bp->data;
+        // entry 존재하면 해당 entry가 가리키는 블럭으로 이동해서
+        // 해당 블럭에 있는 공간들 전부 할당 해제
         for(j = 0; j < NINDIRECT; j++){
-          if(a[j])
+          if(a[j]){
             bfree(ip->dev, a[j]);
+            a[j] = 0;
+          }
         }
         brelse(bp);
         bfree(ip->dev, d[i]);
+        d[i] = 0;
       }
     }
     brelse(dbp);
@@ -479,27 +496,36 @@ itrunc(struct inode *ip)
     ip->addrs[NDIRECT] = 0;
   }
 
+  // NDIRECT + 1 위치 존재하면 triple ind 존재하는 것임
   if(ip->addrs[NDIRECT + 1]){
     tbp = bread(ip->dev, ip->addrs[NDIRECT + 1]);
     t = (uint*)tbp->data;
+    // triple ind 블럭의 entr 하나씩 순회하며 제거
     for(i = 0; i < NINDIRECT; i++){
       if(t[i]){
         dbp = bread(ip->dev, t[i]);
         d = (uint*)dbp->data;
+        // double ind 블럭의 entry 하나씩 순회하며 제거
         for(j = 0; j < NINDIRECT; j++){
           if (d[j]) {
             bp = bread(ip->dev, d[j]);
             a = (uint *)bp->data;
+            // entry 존재하면 해당 entry가 가리키는 블럭으로 이동해서
+            // 해당 블럭에 있는 공간들 전부 할당 해제
             for (k = 0; k < NINDIRECT; k++) {
-              if (a[k])
+              if (a[k]){
                 bfree(ip->dev, a[k]);
+                a[k] = 0;
+              }
             }
             brelse(bp);
             bfree(ip->dev, d[j]);
+            d[j] = 0;
           }
         }
         brelse(dbp);
         bfree(ip->dev, t[i]);
+        t[i] = 0;
       }
     }
     brelse(tbp);

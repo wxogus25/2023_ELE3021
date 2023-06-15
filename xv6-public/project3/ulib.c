@@ -73,7 +73,8 @@ stat(const char *n, struct stat *st)
   int fd;
   int r;
 
-  fd = open(n, O_RDONLY);
+  // stat 메타데이터만 가져오도록 O_META로 open
+  fd = open(n, O_META);
   if(fd < 0)
     return -1;
   r = fstat(fd, st);
