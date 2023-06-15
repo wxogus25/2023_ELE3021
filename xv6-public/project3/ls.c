@@ -2,6 +2,7 @@
 #include "stat.h"
 #include "user.h"
 #include "fs.h"
+#include "fcntl.h"
 
 char*
 fmtname(char *path)
@@ -30,7 +31,8 @@ ls(char *path)
   struct dirent de;
   struct stat st;
 
-  if((fd = open(path, 0)) < 0){
+  // ls는 메타데이터만 확인하도록 설정
+  if((fd = open(path, O_META)) < 0){
     printf(2, "ls: cannot open %s\n", path);
     return;
   }
