@@ -48,15 +48,6 @@ struct log {
 };
 struct log log;
 
-extern struct {
-  struct spinlock lock;
-  struct buf buf[RNBUF];
-
-  // Linked list of all buffers, through prev/next.
-  // head.next is most recently used.
-  struct buf head;
-} bcache;
-
 static void recover_from_log(void);
 static int dirty_num;
 
