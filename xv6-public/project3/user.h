@@ -25,6 +25,7 @@ int sleep(int);
 int uptime(void);
 int myfunction(char*);
 int symlink(const char*, const char*);
+int sync(void);
 
 // ulib.c
 int stat(const char*, struct stat*);

@@ -28,7 +28,7 @@
 
 struct {
   struct spinlock lock;
-  struct buf buf[NBUF];
+  struct buf buf[RNBUF];
 
   // Linked list of all buffers, through prev/next.
   // head.next is most recently used.
@@ -46,7 +46,7 @@ binit(void)
   // Create linked list of buffers
   bcache.head.prev = &bcache.head;
   bcache.head.next = &bcache.head;
-  for(b = bcache.buf; b < bcache.buf+NBUF; b++){
+  for(b = bcache.buf; b < bcache.buf+RNBUF; b++){
     b->next = bcache.head.next;
     b->prev = &bcache.head;
     initsleeplock(&b->lock, "buffer");
@@ -89,6 +89,7 @@ bget(uint dev, uint blockno)
       return b;
     }
   }
+
   panic("bget: no buffers");
 }
 
@@ -106,12 +107,14 @@ bread(uint dev, uint blockno)
 }
 
 // Write b's contents to disk.  Must be locked.
+// commit 호출될때 사용됨
 void
 bwrite(struct buf *b)
 {
   if(!holdingsleep(&b->lock))
     panic("bwrite");
   b->flags |= B_DIRTY;
+  // 버퍼 flage 더티로 바꾸고 디스크에 쓰기
   iderw(b);
 }
 

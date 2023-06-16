@@ -30,7 +30,8 @@
 // Log appends are synchronous.
 
 // Contents of the header block, used for both the on-disk header block
-// and to keep track in memory of logged block# before commit.
+// and to keep track in memory of logged block# before commit
+
 struct logheader {
   int n;
   int block[LOGSIZE];
@@ -47,7 +48,18 @@ struct log {
 };
 struct log log;
 
+extern struct {
+  struct spinlock lock;
+  struct buf buf[RNBUF];
+
+  // Linked list of all buffers, through prev/next.
+  // head.next is most recently used.
+  struct buf head;
+} bcache;
+
 static void recover_from_log(void);
+static int dirty_num;
+
 static void commit();
 
 void
@@ -73,9 +85,9 @@ install_trans(void)
 
   for (tail = 0; tail < log.lh.n; tail++) {
     struct buf *lbuf = bread(log.dev, log.start+tail+1); // read log block
-    struct buf *dbuf = bread(log.dev, log.lh.block[tail]); // read dst
-    memmove(dbuf->data, lbuf->data, BSIZE);  // copy block to dst
-    bwrite(dbuf);  // write dst to disk
+    struct buf *dbuf = bread(log.dev, log.lh.block[tail]);  // read dst
+    memmove(dbuf->data, lbuf->data, BSIZE);                 // copy block to dst
+    bwrite(dbuf);                                           // write dst to disk
     brelse(lbuf);
     brelse(dbuf);
   }
@@ -121,6 +133,24 @@ recover_from_log(void)
   write_head(); // clear the log
 }
 
+// buf 제한 체크하고 넘으면 flush
+void
+limit_check()
+{
+  // 버퍼 크기 넘어서면 dirty bit 켜진 버퍼들 commit
+  if(log.lh.n >= NBUF){
+    acquire(&log.lock);
+    log.committing = 1;
+    release(&log.lock);
+    commit();
+    acquire(&log.lock);
+    log.committing = 0;
+    wakeup(&log);
+    release(&log.lock);
+    dirty_num = 0;
+  }
+}
+
 // called at the start of each FS system call.
 // 모든 파일 처리는 begin과 end 사이에서 이루어짐
 // 트랜잭션하고 비슷함
@@ -138,6 +168,12 @@ begin_op(void)
       sleep(&log, &log.lock);
     } else {
       // 아무도 안쓰고 있고, log에도 공간이 있으면, 파일시스템에 쓰기 시작
+      if(log.outstanding == 0){
+        release(&log.lock);
+        // BUF 제한 넘겼나 확인
+        limit_check();
+        acquire(&log.lock);
+      }
       log.outstanding += 1;
       release(&log.lock);
       break;
@@ -150,38 +186,17 @@ begin_op(void)
 void
 end_op(void)
 {
-  int do_commit = 0;
-
   acquire(&log.lock);
   // 값 다 썼으니까 log에서 값 제거
   log.outstanding -= 1;
   // 내가 쓰고있는데 다른 놈이 쓰는건 말이 안 됨
   if(log.committing)
     panic("log.committing");
-  // 나를 제외하고 누구도 쓰고있지 않으면, flush 해도 됨
-  if(log.outstanding == 0){
-    do_commit = 1;
-    log.committing = 1;
-  } else {
-    // begin_op() may be waiting for log space,
-    // and decrementing log.outstanding has decreased
-    // the amount of reserved space.
+    
+  if(log.outstanding != 0){
     wakeup(&log);
   }
   release(&log.lock);
-  // 여기서 실제 데이터 디스크에 써짐
-  
-  // 이걸 지우고 sync 할때만 커밋하게 변경
-  // begin 할때 버퍼 부족한지 확인하고 부족하면 sync(commit)
-  if(do_commit){
-    // call commit w/o holding locks, since not allowed
-    // to sleep with locks.
-    commit();
-    acquire(&log.lock);
-    log.committing = 0;
-    wakeup(&log);
-    release(&log.lock);
-  }
 }
 // log : 데이터 디스크에 쓰기 전에 로그에 씀(버퍼 -> 로그 -> 디스크)
 // sync가 호출 될 때만 버퍼가 디스크에 내려가게 바꾸면 됨
@@ -197,13 +212,16 @@ write_log(void)
     struct buf *from = bread(log.dev, log.lh.block[tail]); // cache block
     memmove(to->data, from->data, BSIZE);
     bwrite(to);  // write the log
+    if(from->flags & B_DIRTY){
+      dirty_num++;
+    }
     brelse(from);
     brelse(to);
   }
 }
 
-static void
-commit()
+void
+static commit()
 {
   if (log.lh.n > 0) {
     write_log();     // Write modified blocks from cache to log
@@ -245,3 +263,19 @@ log_write(struct buf *b)
   release(&log.lock);
 }
 
+int
+sys_sync(void)
+{
+  int temp = -1;
+  acquire(&log.lock);
+  log.committing = 1;
+  release(&log.lock);
+  commit();
+  acquire(&log.lock);
+  log.committing = 0;
+  wakeup(&log);
+  release(&log.lock);
+  temp = dirty_num;
+  dirty_num = 0;
+  return temp; 
+}
